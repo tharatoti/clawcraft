@@ -45,13 +45,13 @@ const THEMES = {
       pipelineActive: '#228b2288'
     },
     buildings: {
-      'command-center': { sprite: 'cnc-construction-yard', offsetY: -60 },
-      'barracks': { sprite: 'cnc-barracks', offsetY: -40 },
-      'factory': { sprite: 'cnc-war-factory', offsetY: -60 },
-      'powerplant': { sprite: 'cnc-power-plant', offsetY: -50 },
-      'extraction': { sprite: 'cnc-refinery', offsetY: -60 },
-      'lab': { sprite: 'cnc-tech-center', offsetY: -50 },
-      'defense': { sprite: 'cnc-guard-tower', offsetY: -50 }
+      'command-center': { sprite: 'cnc-construction-yard', offsetY: -30 },
+      'barracks': { sprite: 'cnc-barracks', offsetY: -60 },
+      'factory': { sprite: 'cnc-war-factory', offsetY: -30 },
+      'powerplant': { sprite: 'cnc-power-plant', offsetY: -20 },
+      'extraction': { sprite: 'cnc-refinery', offsetY: -30 },
+      'lab': { sprite: 'cnc-power-plant', offsetY: -20 },
+      'defense': { sprite: 'cnc-barracks', offsetY: -60 }
     },
     assetPath: '/assets/cnc/'
   },
@@ -71,13 +71,13 @@ const THEMES = {
       pipelineActive: '#33cc3388'
     },
     buildings: {
-      'command-center': { sprite: 'sc-command-center', offsetY: -80 },
-      'barracks': { sprite: 'sc-barracks', offsetY: -50 },
-      'factory': { sprite: 'sc-factory', offsetY: -60 },
+      'command-center': { sprite: 'sc-command-center', offsetY: -60 },
+      'barracks': { sprite: 'sc-barracks', offsetY: -200 },
+      'factory': { sprite: 'sc-factory', offsetY: -40 },
       'powerplant': { sprite: 'sc-supply-depot', offsetY: -30 },
-      'extraction': { sprite: 'sc-refinery', offsetY: -50 },
-      'lab': { sprite: 'sc-science-facility', offsetY: -60 },
-      'defense': { sprite: 'sc-bunker', offsetY: -40 }
+      'extraction': { sprite: 'sc-refinery', offsetY: -60 },
+      'lab': { sprite: 'sc-science-facility', offsetY: -100 },
+      'defense': { sprite: 'sc-bunker', offsetY: -30 }
     },
     assetPath: '/assets/starcraft/'
   }
@@ -130,6 +130,26 @@ class AssetLoader {
       assets['extraction'] = '/assets/buildings/orange extraction rig01.png';
       assets['lab'] = '/assets/buildings/orangelab01_0.png';
       assets['defense'] = '/assets/buildings/orange defense turret 01.png';
+    }
+    
+    // C&C theme - use extracted single-frame buildings
+    if (themeName === 'cnc') {
+      assets['cnc-construction-yard'] = '/assets/cnc/buildings/construction-yard.png';
+      assets['cnc-barracks'] = '/assets/cnc/buildings/barracks.png';
+      assets['cnc-war-factory'] = '/assets/cnc/buildings/war-factory.png';
+      assets['cnc-power-plant'] = '/assets/cnc/buildings/power-plant.png';
+      assets['cnc-refinery'] = '/assets/cnc/buildings/refinery.png';
+    }
+    
+    // StarCraft theme - use extracted single-frame buildings
+    if (themeName === 'starcraft') {
+      assets['sc-command-center'] = '/assets/starcraft/buildings/command-center.png';
+      assets['sc-barracks'] = '/assets/starcraft/buildings/barracks.png';
+      assets['sc-factory'] = '/assets/starcraft/buildings/factory.png';
+      assets['sc-supply-depot'] = '/assets/starcraft/buildings/supply-depot.png';
+      assets['sc-refinery'] = '/assets/starcraft/buildings/refinery.png';
+      assets['sc-science-facility'] = '/assets/starcraft/buildings/science-facility.png';
+      assets['sc-bunker'] = '/assets/starcraft/buildings/bunker.png';
     }
     
     await this.load(assets);
