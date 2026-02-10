@@ -539,8 +539,29 @@ class World {
     
     this.canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
+      const rect = this.canvas.getBoundingClientRect();
+      
+      // Get mouse position relative to canvas
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      
+      // Calculate world position under cursor before zoom
+      const worldXBefore = (mouseX - this.camera.x) / this.camera.zoom;
+      const worldYBefore = (mouseY - this.camera.y) / this.camera.zoom;
+      
+      // Apply zoom
       const zoomDelta = e.deltaY > 0 ? 0.9 : 1.1;
-      this.camera.targetZoom = Math.max(0.3, Math.min(2, this.camera.targetZoom * zoomDelta));
+      const newZoom = Math.max(0.3, Math.min(2, this.camera.zoom * zoomDelta));
+      
+      // Calculate new camera position to keep world point under cursor
+      const newCameraX = mouseX - worldXBefore * newZoom;
+      const newCameraY = mouseY - worldYBefore * newZoom;
+      
+      // Apply changes
+      this.camera.zoom = newZoom;
+      this.camera.targetZoom = newZoom;
+      this.camera.x = newCameraX;
+      this.camera.y = newCameraY;
     });
     
     this.canvas.addEventListener('click', (e) => {
@@ -1131,6 +1152,7 @@ class World {
     const { ctx } = this;
     const colors = this.theme.colors;
     const pos = ISO.toScreen(entity.gridX, entity.gridY);
+    const now = Date.now();
     
     const themeBuilding = this.theme.buildings[entity.buildingType];
     const sprite = this.assets.get(themeBuilding?.sprite);
@@ -1154,21 +1176,35 @@ class World {
         ctx.strokeRect(x - 5, y - 5, width + 10, height + 10);
       }
       
-      // Status glow
-      if (entity.data.status === 'active' || entity.data.status === 'connected') {
+      // Animated activity pulse
+      const isActive = entity.data.status === 'active' || entity.data.status === 'connected';
+      const entitySeed = (entity.id || entity.data.id || 'default').charCodeAt(0);
+      const pulsePhase = Math.sin(now * 0.003 + entitySeed) * 0.5 + 0.5;
+      
+      // Status glow with pulse
+      if (isActive) {
         ctx.shadowColor = colors.green;
-        ctx.shadowBlur = 15;
+        ctx.shadowBlur = 10 + pulsePhase * 10;
       } else if (entity.data.status === 'error') {
         ctx.shadowColor = colors.red;
-        ctx.shadowBlur = 20;
+        ctx.shadowBlur = 15 + Math.sin(now * 0.01) * 10;
       }
       
       ctx.drawImage(sprite, x, y, width, height);
       ctx.shadowBlur = 0;
       
-      // Status indicator
+      // Animated blinking lights
+      this.drawBuildingLights(x, y, width, height, entity, now);
+      
+      // Smoke/particle effects for active buildings
+      if (isActive) {
+        this.drawBuildingParticles(pos.x, y, entity, now);
+      }
+      
+      // Status indicator with pulse
+      const indicatorRadius = isActive ? 5 + pulsePhase * 2 : 6;
       ctx.beginPath();
-      ctx.arc(x + width - 15, y + 10, 6, 0, Math.PI * 2);
+      ctx.arc(x + width - 15, y + 10, indicatorRadius, 0, Math.PI * 2);
       ctx.fillStyle = entity.data.status === 'active' ? colors.green :
                       entity.data.status === 'connected' ? colors.blue :
                       entity.data.status === 'error' ? colors.red : colors.gold;
@@ -1190,6 +1226,96 @@ class World {
       ctx.font = '10px Arial';
       ctx.textAlign = 'center';
       ctx.fillText(entity.data.name, pos.x, pos.y + 45);
+    }
+  }
+  
+  drawBuildingLights(x, y, width, height, entity, now) {
+    const { ctx } = this;
+    const colors = this.theme.colors;
+    
+    // Create deterministic light positions based on entity id
+    const entityId = entity.id || entity.data.id || 'default';
+    const seed = entityId.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+    const lightCount = 2 + (seed % 3);
+    
+    for (let i = 0; i < lightCount; i++) {
+      // Deterministic position within building bounds
+      const lx = x + 10 + ((seed * (i + 1) * 7) % (width - 20));
+      const ly = y + 5 + ((seed * (i + 1) * 13) % (height * 0.4));
+      
+      // Different blink rates per light
+      const blinkRate = 0.002 + (i * 0.0005);
+      const phase = (now * blinkRate + seed * i) % (Math.PI * 2);
+      const brightness = Math.sin(phase) > 0.3 ? 1 : 0.3;
+      
+      // Light color based on status
+      let lightColor;
+      if (entity.data.status === 'active') {
+        lightColor = brightness > 0.5 ? colors.green : '#003300';
+      } else if (entity.data.status === 'error') {
+        lightColor = brightness > 0.5 ? colors.red : '#330000';
+      } else {
+        lightColor = brightness > 0.5 ? colors.gold : '#333300';
+      }
+      
+      // Draw light with glow
+      ctx.beginPath();
+      ctx.arc(lx, ly, 3, 0, Math.PI * 2);
+      ctx.fillStyle = lightColor;
+      if (brightness > 0.5) {
+        ctx.shadowColor = lightColor;
+        ctx.shadowBlur = 8;
+      }
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+  }
+  
+  drawBuildingParticles(centerX, topY, entity, now) {
+    const { ctx } = this;
+    const colors = this.theme.colors;
+    
+    // Initialize particle system for this building if needed
+    if (!entity.particles) {
+      entity.particles = [];
+      entity.lastParticle = 0;
+    }
+    
+    // Spawn new particles periodically
+    if (now - entity.lastParticle > 500) {
+      entity.particles.push({
+        x: centerX + (Math.random() - 0.5) * 30,
+        y: topY + 10,
+        vx: (Math.random() - 0.5) * 0.3,
+        vy: -0.5 - Math.random() * 0.5,
+        life: 1,
+        size: 2 + Math.random() * 3
+      });
+      entity.lastParticle = now;
+      
+      // Limit particles
+      if (entity.particles.length > 8) {
+        entity.particles.shift();
+      }
+    }
+    
+    // Update and draw particles
+    for (let i = entity.particles.length - 1; i >= 0; i--) {
+      const p = entity.particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life -= 0.015;
+      
+      if (p.life <= 0) {
+        entity.particles.splice(i, 1);
+        continue;
+      }
+      
+      // Draw smoke/steam particle
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(150, 150, 150, ${p.life * 0.4})`;
+      ctx.fill();
     }
   }
   
