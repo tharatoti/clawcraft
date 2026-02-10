@@ -416,30 +416,46 @@ class World {
   }
   
   createMastermindPersonas() {
+    // All 13 Mastermind personas
     const personas = [
-      { id: 'hormozi', name: 'Alex Hormozi', color: '#ff6600' },
-      { id: 'robbins', name: 'Tony Robbins', color: '#ff9900' },
-      { id: 'goggins', name: 'David Goggins', color: '#cc0000' },
-      { id: 'naval', name: 'Naval Ravikant', color: '#3399ff' },
-      { id: 'musk', name: 'Elon Musk', color: '#00cc66' },
-      { id: 'franklin', name: 'Ben Franklin', color: '#ffcc00' },
-      { id: 'rosenberg', name: 'Marshall Rosenberg', color: '#cc99ff' }
+      // Marketing Masters
+      { id: 'hormozi', name: 'Alex Hormozi', color: '#ff6600', role: 'Business & Offers' },
+      { id: 'robbins', name: 'Tony Robbins', color: '#ff9900', role: 'Peak Performance' },
+      { id: 'kennedy', name: 'Dan Kennedy', color: '#cc6600', role: 'Direct Response' },
+      { id: 'abraham', name: 'Jay Abraham', color: '#996633', role: 'Strategy & Growth' },
+      { id: 'halbert', name: 'Gary Halbert', color: '#cc9933', role: 'Copywriting' },
+      // Mindset & Philosophy
+      { id: 'goggins', name: 'David Goggins', color: '#cc0000', role: 'Mental Toughness' },
+      { id: 'rosenberg', name: 'Marshall Rosenberg', color: '#cc99ff', role: 'NVC' },
+      { id: 'naval', name: 'Naval Ravikant', color: '#3399ff', role: 'Wealth & Wisdom' },
+      { id: 'franklin', name: 'Ben Franklin', color: '#ffcc00', role: 'Founding Wisdom' },
+      { id: 'lewis', name: 'C.S. Lewis', color: '#9966cc', role: 'Faith & Reason' },
+      // Modern Visionaries
+      { id: 'musk', name: 'Elon Musk', color: '#00cc66', role: 'Innovation' },
+      { id: 'mises', name: 'Ludwig von Mises', color: '#6699cc', role: 'Economics' },
+      { id: 'adams', name: 'Scott Adams', color: '#ff6699', role: 'Systems' }
     ];
     
-    // Place personas around the boardroom area
+    // Place personas in two arcs around the boardroom area
     const centerX = 15;
-    const centerY = 30;
+    const centerY = 32;
     
     personas.forEach((p, i) => {
-      const angle = (i / personas.length) * Math.PI * 2;
-      const radius = 3;
+      // Two rows of personas
+      const row = i < 7 ? 0 : 1;
+      const indexInRow = row === 0 ? i : i - 7;
+      const countInRow = row === 0 ? 7 : 6;
+      
+      const angle = (indexInRow / countInRow) * Math.PI - Math.PI / 2;
+      const radius = 4 + row * 2;
+      
       const unit = new AnimatedUnit({
         id: p.id,
         name: p.name,
         gridX: centerX + Math.cos(angle) * radius,
-        gridY: centerY + Math.sin(angle) * radius,
+        gridY: centerY + Math.sin(angle) * radius * 0.5, // Flatten for isometric
         color: p.color,
-        data: { type: 'persona', role: 'advisor' }
+        data: { type: 'persona', role: p.role, clickable: true }
       });
       this.units.set(p.id, unit);
     });
@@ -523,12 +539,17 @@ class World {
         }
       }
       
-      // Check units
+      // Check units (personas)
       for (const unit of this.units.values()) {
         const pos = ISO.toScreen(unit.gridX, unit.gridY);
         const dist = Math.sqrt((screenX - pos.x) ** 2 + (screenY - pos.y) ** 2);
         if (dist < 30) {
           clicked = { type: 'unit', data: unit };
+          
+          // If persona is clickable, open chat
+          if (unit.data.clickable && window.openPersonaChat) {
+            window.openPersonaChat(unit.id);
+          }
         }
       }
       
@@ -668,11 +689,17 @@ class World {
     ctx.translate(camera.x, camera.y);
     ctx.scale(camera.zoom, camera.zoom);
     
-    // Draw grid
+    // Draw grid and terrain
     this.renderGrid();
+    
+    // Draw paths between buildings
+    this.renderPaths();
     
     // Draw pipelines (under buildings)
     this.renderPipelines();
+    
+    // Draw atmospheric particles
+    this.renderParticles();
     
     // Draw buildings sorted by position
     const sortedBuildings = [...this.buildings.values()].sort((a, b) => 
@@ -690,34 +717,354 @@ class World {
     
     ctx.restore();
     
+    // Edge fog overlay
+    this.renderFog();
+    
     this.renderMinimap();
+  }
+  
+  renderFog() {
+    const { ctx, canvas } = this;
+    
+    // Edge fog gradient
+    const edgeSize = 120;
+    
+    // Top fog
+    const topGrad = ctx.createLinearGradient(0, 0, 0, edgeSize);
+    topGrad.addColorStop(0, 'rgba(10, 10, 26, 0.7)');
+    topGrad.addColorStop(1, 'rgba(10, 10, 26, 0)');
+    ctx.fillStyle = topGrad;
+    ctx.fillRect(0, 0, canvas.width, edgeSize);
+    
+    // Bottom fog
+    const bottomGrad = ctx.createLinearGradient(0, canvas.height - edgeSize, 0, canvas.height);
+    bottomGrad.addColorStop(0, 'rgba(10, 10, 26, 0)');
+    bottomGrad.addColorStop(1, 'rgba(10, 10, 26, 0.7)');
+    ctx.fillStyle = bottomGrad;
+    ctx.fillRect(0, canvas.height - edgeSize, canvas.width, edgeSize);
+    
+    // Left fog
+    const leftGrad = ctx.createLinearGradient(0, 0, edgeSize, 0);
+    leftGrad.addColorStop(0, 'rgba(10, 10, 26, 0.7)');
+    leftGrad.addColorStop(1, 'rgba(10, 10, 26, 0)');
+    ctx.fillStyle = leftGrad;
+    ctx.fillRect(0, 0, edgeSize, canvas.height);
+    
+    // Right fog  
+    const rightGrad = ctx.createLinearGradient(canvas.width - edgeSize, 0, canvas.width, 0);
+    rightGrad.addColorStop(0, 'rgba(10, 10, 26, 0)');
+    rightGrad.addColorStop(1, 'rgba(10, 10, 26, 0.7)');
+    ctx.fillStyle = rightGrad;
+    ctx.fillRect(canvas.width - edgeSize, 0, edgeSize, canvas.height);
   }
   
   renderGrid() {
     const { ctx } = this;
     const colors = this.theme.colors;
     
-    ctx.strokeStyle = colors.grid;
-    ctx.lineWidth = 1;
-    
-    for (let x = 0; x <= this.gridWidth; x++) {
-      for (let y = 0; y <= this.gridHeight; y++) {
-        if (x < this.gridWidth && y < this.gridHeight) {
-          const p1 = ISO.toScreen(x, y);
-          const p2 = ISO.toScreen(x + 1, y);
-          const p3 = ISO.toScreen(x + 1, y + 1);
-          const p4 = ISO.toScreen(x, y + 1);
-          
-          ctx.beginPath();
-          ctx.moveTo(p1.x, p1.y);
-          ctx.lineTo(p2.x, p2.y);
-          ctx.lineTo(p3.x, p3.y);
-          ctx.lineTo(p4.x, p4.y);
-          ctx.closePath();
-          ctx.stroke();
+    // Draw terrain base tiles with variation
+    for (let x = 0; x < this.gridWidth; x++) {
+      for (let y = 0; y < this.gridHeight; y++) {
+        const p1 = ISO.toScreen(x, y);
+        const p2 = ISO.toScreen(x + 1, y);
+        const p3 = ISO.toScreen(x + 1, y + 1);
+        const p4 = ISO.toScreen(x, y + 1);
+        
+        // Terrain type based on noise
+        const noise = this.getTerrainNoise(x, y);
+        
+        // Base tile fill with gradient
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.lineTo(p3.x, p3.y);
+        ctx.lineTo(p4.x, p4.y);
+        ctx.closePath();
+        
+        // Terrain color variation
+        if (noise > 0.7) {
+          // Tech platform (near buildings)
+          ctx.fillStyle = 'rgba(30, 30, 50, 0.8)';
+        } else if (noise > 0.4) {
+          // Normal ground
+          ctx.fillStyle = 'rgba(20, 20, 35, 0.6)';
+        } else {
+          // Darker terrain
+          ctx.fillStyle = 'rgba(15, 15, 25, 0.5)';
         }
+        ctx.fill();
+        
+        // Grid lines
+        ctx.strokeStyle = colors.grid;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        
+        // Add terrain decorations
+        this.renderTerrainDecoration(x, y, noise);
       }
     }
+  }
+  
+  getTerrainNoise(x, y) {
+    // Simple seeded pseudo-random based on position
+    const seed = (x * 1337 + y * 7919) % 1000;
+    return (Math.sin(seed) + 1) / 2;
+  }
+  
+  renderTerrainDecoration(x, y, noise) {
+    const { ctx } = this;
+    const colors = this.theme.colors;
+    const pos = ISO.toScreen(x + 0.5, y + 0.5);
+    
+    // Check if there's a building here
+    for (const building of this.buildings.values()) {
+      const dx = Math.abs(building.gridX - x);
+      const dy = Math.abs(building.gridY - y);
+      if (dx < 2 && dy < 2) return; // Don't decorate near buildings
+    }
+    
+    // Random decorations
+    const decorSeed = (x * 31 + y * 17) % 100;
+    
+    if (decorSeed < 5) {
+      // Small crystal/mineral deposit
+      this.drawCrystal(pos.x, pos.y, colors.blue);
+    } else if (decorSeed < 10) {
+      // Tech debris
+      this.drawDebris(pos.x, pos.y, colors.purple);
+    } else if (decorSeed < 15) {
+      // Data node (glowing dot)
+      this.drawDataNode(pos.x, pos.y, colors.green);
+    } else if (decorSeed < 18) {
+      // Small rock
+      this.drawRock(pos.x, pos.y);
+    }
+  }
+  
+  drawCrystal(x, y, color) {
+    const { ctx } = this;
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.6;
+    
+    // Small crystal cluster
+    ctx.beginPath();
+    ctx.moveTo(x, y - 8);
+    ctx.lineTo(x + 4, y);
+    ctx.lineTo(x, y + 3);
+    ctx.lineTo(x - 4, y);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Glow
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 8;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    
+    ctx.globalAlpha = 1;
+  }
+  
+  drawDebris(x, y, color) {
+    const { ctx } = this;
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.4;
+    
+    // Scattered tech debris
+    ctx.fillRect(x - 5, y - 2, 4, 3);
+    ctx.fillRect(x + 2, y, 3, 2);
+    ctx.fillRect(x - 2, y + 3, 5, 2);
+    
+    ctx.globalAlpha = 1;
+  }
+  
+  drawDataNode(x, y, color) {
+    const { ctx } = this;
+    const pulse = Math.sin(Date.now() * 0.003 + x + y) * 0.3 + 0.7;
+    
+    ctx.fillStyle = color;
+    ctx.globalAlpha = pulse;
+    
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Outer glow
+    ctx.globalAlpha = pulse * 0.3;
+    ctx.beginPath();
+    ctx.arc(x, y, 6, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.globalAlpha = 1;
+  }
+  
+  drawRock(x, y) {
+    const { ctx } = this;
+    ctx.fillStyle = '#2a2a3a';
+    
+    ctx.beginPath();
+    ctx.moveTo(x - 5, y);
+    ctx.lineTo(x - 2, y - 4);
+    ctx.lineTo(x + 3, y - 3);
+    ctx.lineTo(x + 5, y);
+    ctx.lineTo(x + 2, y + 2);
+    ctx.lineTo(x - 3, y + 2);
+    ctx.closePath();
+    ctx.fill();
+    
+    ctx.strokeStyle = '#1a1a2a';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+  
+  renderPaths() {
+    const { ctx } = this;
+    const colors = this.theme.colors;
+    
+    // Draw walking paths between connected buildings
+    const pathPairs = [
+      ['gateway', 'jarvis'],
+      ['gateway', 'cron'],
+      ['gateway', 'tokens'],
+      ['gateway', 'knowledge-bridge'],
+      ['gateway', 'avatar-dashboard'],
+      ['gateway', 'wiki'],
+      ['jarvis', 'home-assistant'],
+      ['wiki', 'boardroom']
+    ];
+    
+    ctx.strokeStyle = 'rgba(60, 60, 80, 0.6)';
+    ctx.lineWidth = 12;
+    ctx.lineCap = 'round';
+    ctx.setLineDash([20, 10]);
+    
+    for (const [fromId, toId] of pathPairs) {
+      const from = this.buildings.get(fromId);
+      const to = this.buildings.get(toId);
+      if (!from || !to) continue;
+      
+      const p1 = ISO.toScreen(from.gridX, from.gridY);
+      const p2 = ISO.toScreen(to.gridX, to.gridY);
+      
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
+    }
+    
+    ctx.setLineDash([]);
+  }
+  
+  renderParticles() {
+    const { ctx } = this;
+    const colors = this.theme.colors;
+    const time = Date.now() * 0.001;
+    
+    // Floating particles / dust motes
+    for (let i = 0; i < 50; i++) {
+      const seed = i * 137;
+      const x = (Math.sin(seed + time * 0.3) * 0.5 + 0.5) * this.gridWidth;
+      const y = (Math.cos(seed * 1.3 + time * 0.2) * 0.5 + 0.5) * this.gridHeight;
+      const pos = ISO.toScreen(x, y);
+      
+      const alpha = Math.sin(time + seed) * 0.3 + 0.4;
+      const size = 1 + Math.sin(seed * 0.5) * 0.5;
+      
+      ctx.fillStyle = i % 3 === 0 ? colors.blue : 
+                      i % 3 === 1 ? colors.purple : colors.green;
+      ctx.globalAlpha = alpha * 0.3;
+      
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y - 20, size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
+    ctx.globalAlpha = 1;
+    
+    // Energy pulses along pipelines
+    for (const pipeline of this.pipelines) {
+      if (!pipeline.active) continue;
+      
+      const from = this.buildings.get(pipeline.from);
+      const to = this.buildings.get(pipeline.to);
+      if (!from || !to) continue;
+      
+      const p1 = ISO.toScreen(from.gridX, from.gridY);
+      const p2 = ISO.toScreen(to.gridX, to.gridY);
+      
+      // Energy burst at random point
+      const t = (time * 0.5 + pipeline.flowOffset * 10) % 1;
+      const px = p1.x + (p2.x - p1.x) * t;
+      const py = p1.y + (p2.y - p1.y) * t;
+      
+      ctx.fillStyle = colors.green;
+      ctx.globalAlpha = 0.8;
+      ctx.beginPath();
+      ctx.arc(px, py, 4 + Math.sin(time * 5) * 2, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Outer glow
+      ctx.globalAlpha = 0.3;
+      ctx.beginPath();
+      ctx.arc(px, py, 10, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
+    ctx.globalAlpha = 1;
+  }
+  
+  drawBuildingPlatform(gridX, gridY, size, colors) {
+    const { ctx } = this;
+    
+    // Platform base
+    const p1 = ISO.toScreen(gridX - 0.3, gridY - 0.3);
+    const p2 = ISO.toScreen(gridX + size + 0.3, gridY - 0.3);
+    const p3 = ISO.toScreen(gridX + size + 0.3, gridY + size + 0.3);
+    const p4 = ISO.toScreen(gridX - 0.3, gridY + size + 0.3);
+    
+    // Platform shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y + 5);
+    ctx.lineTo(p2.x, p2.y + 5);
+    ctx.lineTo(p3.x, p3.y + 5);
+    ctx.lineTo(p4.x, p4.y + 5);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Platform top
+    const gradient = ctx.createLinearGradient(p1.x, p1.y, p3.x, p3.y);
+    gradient.addColorStop(0, 'rgba(50, 50, 70, 0.9)');
+    gradient.addColorStop(0.5, 'rgba(40, 40, 60, 0.9)');
+    gradient.addColorStop(1, 'rgba(30, 30, 50, 0.9)');
+    
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.lineTo(p3.x, p3.y);
+    ctx.lineTo(p4.x, p4.y);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Platform edge highlight
+    ctx.strokeStyle = colors.purple;
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(p4.x, p4.y);
+    ctx.lineTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    
+    // Inner glow
+    ctx.strokeStyle = colors.blue;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.3;
+    ctx.setLineDash([5, 5]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
   }
   
   renderPipelines() {
@@ -770,6 +1117,9 @@ class World {
     
     const scale = 0.5;
     const offsetY = themeBuilding?.offsetY || -50;
+    
+    // Draw platform/foundation under building
+    this.drawBuildingPlatform(entity.gridX, entity.gridY, entity.def.gridSize || 1, colors);
     
     if (sprite) {
       const width = sprite.width * scale;

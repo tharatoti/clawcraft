@@ -1,5 +1,6 @@
 // ClawCraft v2 - 2D Isometric Command Interface
 import { World, THEMES } from './isometric.js';
+import { initChat } from './chat.js';
 
 // Initialize canvas
 const canvas = document.getElementById('world');
@@ -35,9 +36,11 @@ async function init() {
   createThemeSelector();
   connectWebSocket();
   updateTime();
+  initChat(); // Initialize persona chat system
   
   console.log('ClawCraft v2 ready');
   console.log('Controls: Drag to pan, scroll to zoom, click to select');
+  console.log('Click on a persona to chat with them!');
   console.log('Themes: Switch between Orange Sci-Fi, C&C, and StarCraft');
 }
 
