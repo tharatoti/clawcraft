@@ -1,0 +1,14 @@
+{
+  "name": "clawcraft-backend",
+  "version": "0.1.0",
+  "description": "ClawCraft WebSocket backend for OpenClaw state",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  }
+}

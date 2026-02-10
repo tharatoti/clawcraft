@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ClawCraft - Agent Command</title>
+  <link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+  <!-- 3D Canvas -->
+  <canvas id="world"></canvas>
+  
+  <!-- LCARS Overlay -->
+  <div id="lcars-overlay">
+    <!-- Top bar -->
+    <div class="lcars-bar lcars-top">
+      <div class="lcars-elbow lcars-elbow-tl"></div>
+      <div class="lcars-title">CLAWCRAFT COMMAND</div>
+      <div class="lcars-status">
+        <span class="status-item" id="connection-status">● CONNECTING</span>
+        <span class="status-item" id="time-display">--:--:--</span>
+      </div>
+      <div class="lcars-elbow lcars-elbow-tr"></div>
+    </div>
+    
+    <!-- Resource bar -->
+    <div class="lcars-resources">
+      <div class="resource">
+        <span class="resource-icon">⚡</span>
+        <span class="resource-label">TOKENS</span>
+        <span class="resource-value" id="token-count">0</span>
+      </div>
+      <div class="resource">
+        <span class="resource-icon">🔧</span>
+        <span class="resource-label">AGENTS</span>
+        <span class="resource-value" id="agent-count">0</span>
+      </div>
+      <div class="resource">
+        <span class="resource-icon">⏱️</span>
+        <span class="resource-label">PROCESSES</span>
+        <span class="resource-value" id="process-count">0</span>
+      </div>
+    </div>
+    
+    <!-- Selection panel (hidden by default) -->
+    <div id="selection-panel" class="lcars-panel hidden">
+      <div class="panel-header">
+        <div class="lcars-elbow lcars-elbow-bl"></div>
+        <span id="selected-name">UNIT NAME</span>
+        <button class="panel-close" onclick="closePanel()">×</button>
+      </div>
+      <div class="panel-content">
+        <div class="panel-status">
+          <span class="label">STATUS:</span>
+          <span id="selected-status" class="value">IDLE</span>
+        </div>
+        <div class="panel-info" id="selected-info">
+          <!-- Dynamic content -->
+        </div>
+        <div class="panel-log">
+          <div class="log-header">ACTIVITY LOG</div>
+          <div id="selected-log" class="log-content">
+            <!-- Log entries -->
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Minimap -->
+    <div id="minimap" class="lcars-panel">
+      <canvas id="minimap-canvas" width="200" height="150"></canvas>
+    </div>
+  </div>
+  
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,327 @@
+/* LCARS Color Palette (Star Trek TNG) */
+:root {
+  --lcars-orange: #ff9900;
+  --lcars-purple: #cc99cc;
+  --lcars-blue: #9999ff;
+  --lcars-salmon: #ff9966;
+  --lcars-tan: #cc6666;
+  --lcars-gold: #ffcc66;
+  --lcars-red: #cc0000;
+  --lcars-green: #00cc00;
+  --lcars-bg: #000000;
+  --lcars-text: #ff9900;
+  
+  /* StarCraft accent colors */
+  --sc-terran-blue: #0066cc;
+  --sc-mineral-cyan: #00ccff;
+  --sc-vespene-green: #00ff66;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--lcars-bg);
+  color: var(--lcars-text);
+  font-family: 'Helvetica Neue', 'Arial', sans-serif;
+  overflow: hidden;
+}
+
+/* 3D Canvas */
+#world {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 1;
+}
+
+/* LCARS Overlay */
+#lcars-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 10;
+}
+
+#lcars-overlay > * {
+  pointer-events: auto;
+}
+
+/* Top Bar */
+.lcars-bar {
+  display: flex;
+  align-items: center;
+  height: 60px;
+  background: linear-gradient(90deg, var(--lcars-purple) 0%, var(--lcars-purple) 200px, transparent 200px);
+}
+
+.lcars-top {
+  padding-left: 20px;
+}
+
+.lcars-elbow {
+  width: 80px;
+  height: 60px;
+  background: var(--lcars-purple);
+}
+
+.lcars-elbow-tl {
+  border-radius: 0 0 40px 0;
+}
+
+.lcars-elbow-tr {
+  border-radius: 0 0 0 40px;
+  margin-left: auto;
+}
+
+.lcars-title {
+  font-size: 28px;
+  font-weight: bold;
+  letter-spacing: 4px;
+  color: var(--lcars-orange);
+  margin-left: 30px;
+  text-transform: uppercase;
+}
+
+.lcars-status {
+  display: flex;
+  gap: 30px;
+  margin-left: auto;
+  margin-right: 30px;
+}
+
+.status-item {
+  font-size: 18px;
+  font-weight: bold;
+  letter-spacing: 2px;
+}
+
+#connection-status {
+  color: var(--lcars-gold);
+}
+
+#connection-status.connected {
+  color: var(--lcars-green);
+}
+
+#connection-status.error {
+  color: var(--lcars-red);
+}
+
+/* Resource Bar */
+.lcars-resources {
+  position: absolute;
+  top: 70px;
+  left: 20px;
+  display: flex;
+  gap: 20px;
+}
+
+.resource {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  border: 2px solid var(--lcars-blue);
+  border-radius: 20px;
+  padding: 8px 16px;
+}
+
+.resource-icon {
+  font-size: 20px;
+}
+
+.resource-label {
+  font-size: 12px;
+  color: var(--lcars-purple);
+  letter-spacing: 1px;
+}
+
+.resource-value {
+  font-size: 18px;
+  font-weight: bold;
+  color: var(--lcars-orange);
+  min-width: 40px;
+  text-align: right;
+}
+
+/* Selection Panel */
+.lcars-panel {
+  background: rgba(0, 0, 0, 0.85);
+  border: 3px solid var(--lcars-purple);
+  border-radius: 0 30px 30px 0;
+}
+
+#selection-panel {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  width: 350px;
+  max-height: 400px;
+}
+
+#selection-panel.hidden {
+  display: none;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  background: var(--lcars-purple);
+  padding: 10px 20px;
+  border-radius: 0 25px 0 0;
+}
+
+.panel-header .lcars-elbow-bl {
+  width: 40px;
+  height: 40px;
+  background: var(--lcars-bg);
+  border-radius: 0 20px 0 0;
+  margin-right: 15px;
+}
+
+#selected-name {
+  font-size: 18px;
+  font-weight: bold;
+  letter-spacing: 2px;
+  color: var(--lcars-bg);
+  flex: 1;
+}
+
+.panel-close {
+  background: var(--lcars-salmon);
+  border: none;
+  color: var(--lcars-bg);
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  font-size: 20px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.panel-content {
+  padding: 15px 20px;
+}
+
+.panel-status {
+  margin-bottom: 15px;
+}
+
+.panel-status .label {
+  color: var(--lcars-purple);
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+.panel-status .value {
+  margin-left: 10px;
+  font-weight: bold;
+}
+
+.panel-status .value.active {
+  color: var(--lcars-green);
+}
+
+.panel-status .value.idle {
+  color: var(--lcars-gold);
+}
+
+.panel-info {
+  margin-bottom: 15px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.panel-log {
+  border-top: 2px solid var(--lcars-blue);
+  padding-top: 10px;
+}
+
+.log-header {
+  font-size: 12px;
+  color: var(--lcars-purple);
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+
+.log-content {
+  max-height: 150px;
+  overflow-y: auto;
+  font-family: 'Monaco', 'Consolas', monospace;
+  font-size: 11px;
+  color: var(--lcars-blue);
+  line-height: 1.4;
+}
+
+.log-entry {
+  padding: 2px 0;
+  border-bottom: 1px solid rgba(153, 153, 255, 0.2);
+}
+
+.log-entry .time {
+  color: var(--lcars-purple);
+  margin-right: 8px;
+}
+
+/* Minimap */
+#minimap {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  width: 220px;
+  height: 170px;
+  padding: 10px;
+  border-radius: 30px 0 0 30px;
+}
+
+#minimap-canvas {
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 20, 40, 0.8);
+  border: 1px solid var(--lcars-blue);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--lcars-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--lcars-purple);
+  border-radius: 4px;
+}
+
+/* Unit indicators in 3D space (CSS2DRenderer) */
+.unit-label {
+  background: rgba(0, 0, 0, 0.8);
+  border: 1px solid var(--lcars-orange);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--lcars-orange);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.unit-label.active {
+  border-color: var(--lcars-green);
+  color: var(--lcars-green);
+}
+
+.unit-label.error {
+  border-color: var(--lcars-red);
+  color: var(--lcars-red);
+}
