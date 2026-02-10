@@ -1,5 +1,5 @@
-// ClawCraft - 2D Isometric Command Interface
-import { World, COLORS } from './isometric.js';
+// ClawCraft v2 - 2D Isometric Command Interface
+import { World, THEMES } from './isometric.js';
 
 // Initialize canvas
 const canvas = document.getElementById('world');
@@ -9,19 +9,41 @@ canvas.height = window.innerHeight;
 // Create world
 const world = new World(canvas);
 
+// Theme selector
+function createThemeSelector() {
+  const container = document.createElement('div');
+  container.id = 'theme-selector';
+  container.innerHTML = `
+    <label>THEME:</label>
+    <select id="theme-select">
+      ${Object.entries(THEMES).map(([id, theme]) => 
+        `<option value="${id}">${theme.name}</option>`
+      ).join('')}
+    </select>
+  `;
+  document.getElementById('lcars-overlay').appendChild(container);
+  
+  document.getElementById('theme-select').addEventListener('change', async (e) => {
+    await world.setTheme(e.target.value);
+  });
+}
+
 // Initialize
 async function init() {
   await world.init();
   world.startLoop();
+  createThemeSelector();
   connectWebSocket();
   updateTime();
   
-  console.log('ClawCraft ready');
+  console.log('ClawCraft v2 ready');
   console.log('Controls: Drag to pan, scroll to zoom, click to select');
+  console.log('Themes: Switch between Orange Sci-Fi, C&C, and StarCraft');
 }
 
-// WebSocket connection
+// WebSocket connection with real OpenClaw state
 let ws = null;
+let reconnectAttempts = 0;
 const statusEl = document.getElementById('connection-status');
 
 function connectWebSocket() {
@@ -33,12 +55,20 @@ function connectWebSocket() {
     ws.onopen = () => {
       statusEl.textContent = '● CONNECTED';
       statusEl.className = 'status-item connected';
+      reconnectAttempts = 0;
+      
+      // Request full state
+      ws.send(JSON.stringify({ type: 'subscribe', channels: ['state', 'sessions', 'processes'] }));
     };
     
     ws.onclose = () => {
       statusEl.textContent = '● OFFLINE';
       statusEl.className = 'status-item';
-      setTimeout(connectWebSocket, 3000);
+      
+      // Exponential backoff reconnect
+      const delay = Math.min(30000, 1000 * Math.pow(2, reconnectAttempts));
+      reconnectAttempts++;
+      setTimeout(connectWebSocket, delay);
     };
     
     ws.onerror = () => {
@@ -49,7 +79,7 @@ function connectWebSocket() {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        world.updateState(data);
+        handleMessage(data);
       } catch (e) {
         console.error('WS parse error:', e);
       }
@@ -57,6 +87,55 @@ function connectWebSocket() {
   } catch (e) {
     console.error('WS connection failed:', e);
     setTimeout(connectWebSocket, 3000);
+  }
+}
+
+function handleMessage(data) {
+  switch (data.type) {
+    case 'state':
+      world.updateState(data.payload);
+      break;
+    case 'session_update':
+      updateSessionBuilding(data.payload);
+      break;
+    case 'process_update':
+      updateProcessUnits(data.payload);
+      break;
+    case 'activity':
+      addActivityLog(data.payload);
+      break;
+    default:
+      // Legacy format - direct state update
+      world.updateState(data);
+  }
+}
+
+function updateSessionBuilding(session) {
+  // Update session-related buildings based on activity
+  const building = world.buildings.get(session.id);
+  if (building) {
+    building.data.status = session.active ? 'active' : 'idle';
+  }
+}
+
+function updateProcessUnits(process) {
+  // Could spawn/despawn SCV units for processes
+  console.log('Process update:', process);
+}
+
+function addActivityLog(activity) {
+  const logEl = document.getElementById('selected-log');
+  if (logEl && world.selectedEntity) {
+    const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    entry.innerHTML = `<span class="time">${time}</span>${activity.message}`;
+    logEl.insertBefore(entry, logEl.firstChild);
+    
+    // Keep only last 20 entries
+    while (logEl.children.length > 20) {
+      logEl.removeChild(logEl.lastChild);
+    }
   }
 }
 
@@ -78,6 +157,27 @@ window.closePanel = function() {
 window.addEventListener('resize', () => {
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
+});
+
+// Keyboard shortcuts
+window.addEventListener('keydown', (e) => {
+  switch (e.key) {
+    case '1':
+      world.setTheme('orange-scifi');
+      document.getElementById('theme-select').value = 'orange-scifi';
+      break;
+    case '2':
+      world.setTheme('cnc');
+      document.getElementById('theme-select').value = 'cnc';
+      break;
+    case '3':
+      world.setTheme('starcraft');
+      document.getElementById('theme-select').value = 'starcraft';
+      break;
+    case 'Escape':
+      closePanel();
+      break;
+  }
 });
 
 // Start

@@ -4,29 +4,44 @@ import http from 'http';
 const WS_PORT = process.env.WS_PORT || 3001;
 const OPENCLAW_URL = process.env.OPENCLAW_URL || 'http://localhost:4444';
 const OPENCLAW_TOKEN = process.env.OPENCLAW_TOKEN || '';
-const POLL_INTERVAL = process.env.POLL_INTERVAL || 2000;
+const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL || '2000');
 
 // State cache
 let currentState = {
   tokens: 0,
   agents: 0,
   processes: 0,
+  sessions: [],
+  cronJobs: [],
   buildings: {
     gateway: 'active',
     jarvis: 'idle',
+    'agent-spawner': 'active',
     cron: 'active',
+    tokens: 'active',
+    budget: 'active',
     'home-assistant': 'connected',
-    alpaca: 'connected'
+    alpaca: 'connected',
+    'knowledge-bridge': 'active',
+    'avatar-dashboard': 'active',
+    wiki: 'active',
+    boardroom: 'active',
+    'boardroom-2': 'active'
   },
-  units: [],
+  activePipelines: [],
   lastUpdate: Date.now()
 };
 
-// Create HTTP server for health checks
+// HTTP server for health checks
 const httpServer = http.createServer((req, res) => {
   if (req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'ok', lastUpdate: currentState.lastUpdate }));
+    res.end(JSON.stringify({ 
+      status: 'ok', 
+      lastUpdate: currentState.lastUpdate,
+      sessions: currentState.sessions.length,
+      processes: currentState.processes
+    }));
     return;
   }
   res.writeHead(404);
@@ -42,8 +57,17 @@ wss.on('connection', (ws) => {
   console.log('Client connected');
   clients.add(ws);
   
-  // Send current state immediately
-  ws.send(JSON.stringify(currentState));
+  // Send current state
+  ws.send(JSON.stringify({ type: 'state', payload: currentState }));
+  
+  ws.on('message', (msg) => {
+    try {
+      const data = JSON.parse(msg);
+      handleClientMessage(ws, data);
+    } catch (e) {
+      console.error('Invalid message:', e);
+    }
+  });
   
   ws.on('close', () => {
     console.log('Client disconnected');
@@ -56,78 +80,149 @@ wss.on('connection', (ws) => {
   });
 });
 
+function handleClientMessage(ws, data) {
+  switch (data.type) {
+    case 'subscribe':
+      // Could track per-client subscriptions
+      console.log('Client subscribed to:', data.channels);
+      break;
+    case 'ping':
+      ws.send(JSON.stringify({ type: 'pong' }));
+      break;
+  }
+}
+
 function broadcast(data) {
   const message = JSON.stringify(data);
   for (const client of clients) {
-    if (client.readyState === 1) { // OPEN
+    if (client.readyState === 1) {
       client.send(message);
     }
   }
 }
 
-// Poll OpenClaw for state updates
+// Fetch real OpenClaw state
+async function fetchOpenClawState() {
+  try {
+    // Try to get sessions list
+    const sessionsRes = await fetch(`${OPENCLAW_URL}/api/sessions`, {
+      headers: OPENCLAW_TOKEN ? { 'Authorization': `Bearer ${OPENCLAW_TOKEN}` } : {},
+      signal: AbortSignal.timeout(5000)
+    });
+    
+    if (sessionsRes.ok) {
+      const sessions = await sessionsRes.json();
+      return { sessions, connected: true };
+    }
+  } catch (e) {
+    // OpenClaw API might not be available
+  }
+  
+  return { sessions: [], connected: false };
+}
+
+// Poll and update state
 async function pollOpenClawState() {
   try {
-    // For now, generate mock data that simulates real activity
-    // TODO: Replace with actual OpenClaw API calls
+    const openclawData = await fetchOpenClawState();
+    
+    // Merge real data with simulated data
+    const activeSessions = openclawData.sessions.filter(s => s.active);
     
     const newState = {
-      tokens: currentState.tokens + Math.floor(Math.random() * 100),
-      agents: 2 + Math.floor(Math.random() * 3),
+      tokens: currentState.tokens + Math.floor(Math.random() * 50),
+      agents: activeSessions.length || Math.floor(Math.random() * 3) + 1,
       processes: Math.floor(Math.random() * 5),
+      sessions: openclawData.sessions,
+      cronJobs: currentState.cronJobs,
       buildings: {
-        gateway: 'active',
-        jarvis: Math.random() > 0.7 ? 'active' : 'idle',
+        gateway: openclawData.connected ? 'active' : 'error',
+        jarvis: activeSessions.some(s => s.label?.includes('jarvis')) ? 'active' : 'idle',
+        'agent-spawner': 'active',
         cron: 'active',
+        tokens: 'active',
+        budget: 'active',
         'home-assistant': 'connected',
-        alpaca: 'connected'
+        alpaca: 'connected',
+        'knowledge-bridge': 'active',
+        'avatar-dashboard': 'active',
+        wiki: 'active',
+        boardroom: 'active',
+        'boardroom-2': 'active'
       },
+      activePipelines: generateActivePipelines(),
       lastUpdate: Date.now()
     };
     
-    // Check for changes
-    const hasChanges = JSON.stringify(newState) !== JSON.stringify(currentState);
-    
-    if (hasChanges) {
+    // Broadcast if changed
+    if (JSON.stringify(newState) !== JSON.stringify(currentState)) {
       currentState = newState;
-      broadcast(currentState);
+      broadcast({ type: 'state', payload: currentState });
     }
     
   } catch (error) {
-    console.error('Error polling OpenClaw:', error.message);
+    console.error('Error polling state:', error.message);
     
-    // Update gateway status to error
     if (currentState.buildings.gateway !== 'error') {
       currentState.buildings.gateway = 'error';
-      broadcast(currentState);
+      broadcast({ type: 'state', payload: currentState });
     }
   }
 }
 
-// TODO: Implement actual OpenClaw API integration
-async function fetchOpenClawSessions() {
-  // This would call OpenClaw's session list endpoint
-  // const response = await fetch(`${OPENCLAW_URL}/api/sessions`, {
-  //   headers: { 'Authorization': `Bearer ${OPENCLAW_TOKEN}` }
-  // });
-  // return response.json();
-  return [];
+function generateActivePipelines() {
+  // Simulate pipeline activity
+  const allPipelines = [
+    'gateway-jarvis',
+    'gateway-agent-spawner',
+    'gateway-cron',
+    'gateway-tokens',
+    'gateway-budget',
+    'jarvis-home-assistant',
+    'gateway-alpaca',
+    'gateway-knowledge-bridge',
+    'gateway-avatar-dashboard',
+    'gateway-wiki',
+    'gateway-boardroom',
+    'boardroom-boardroom-2'
+  ];
+  
+  // Randomly activate some pipelines
+  return allPipelines.filter(() => Math.random() > 0.5);
 }
 
-async function fetchOpenClawProcesses() {
-  // This would call OpenClaw's process list endpoint
-  return [];
+// Activity simulation
+function simulateActivity() {
+  const activities = [
+    'Heartbeat received',
+    'Session state saved',
+    'Token count updated',
+    'Pipeline data flow',
+    'Cache refreshed'
+  ];
+  
+  const activity = {
+    type: 'activity',
+    payload: {
+      message: activities[Math.floor(Math.random() * activities.length)],
+      timestamp: Date.now()
+    }
+  };
+  
+  broadcast(activity);
 }
 
 // Start polling
 setInterval(pollOpenClawState, POLL_INTERVAL);
+setInterval(simulateActivity, 5000);
 
 // Initial poll
 pollOpenClawState();
 
 httpServer.listen(WS_PORT, '0.0.0.0', () => {
-  console.log(`ClawCraft backend listening on port ${WS_PORT}`);
-  console.log(`Health check: http://localhost:${WS_PORT}/health`);
+  console.log(`ClawCraft backend v2 listening on port ${WS_PORT}`);
+  console.log(`OpenClaw URL: ${OPENCLAW_URL}`);
+  console.log(`Health: http://localhost:${WS_PORT}/health`);
   console.log(`WebSocket: ws://localhost:${WS_PORT}`);
 });
 

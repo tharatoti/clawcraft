@@ -325,3 +325,49 @@ body {
   border-color: var(--lcars-red);
   color: var(--lcars-red);
 }
+
+/* Theme selector */
+#theme-selector {
+  position: absolute;
+  top: 70px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.7);
+  border: 2px solid var(--lcars-purple);
+  border-radius: 20px;
+  padding: 8px 16px;
+}
+
+#theme-selector label {
+  font-size: 12px;
+  color: var(--lcars-purple);
+  letter-spacing: 1px;
+}
+
+#theme-select {
+  background: var(--lcars-bg);
+  border: 1px solid var(--lcars-orange);
+  border-radius: 4px;
+  color: var(--lcars-orange);
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+#theme-select:hover {
+  border-color: var(--lcars-gold);
+}
+
+#theme-select:focus {
+  outline: none;
+  border-color: var(--lcars-blue);
+}
+
+/* Dynamic theme colors */
+:root {
+  --theme-orange: #ff9900;
+  --theme-purple: #cc99cc;
+  --theme-blue: #9999ff;
+}
