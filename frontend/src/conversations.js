@@ -13,17 +13,24 @@ const activeConversations = new Map();
 let currentConversationGroup = [];
 let currentConversationMessages = []; // Store messages for join feature
 
+// Conversation state
+let conversationInProgress = false; // True while generating/displaying
+let conversationHasStarted = false; // True once first message shown
+
 // Conversation cooldown per persona pair (ms)
 const CONVERSATION_COOLDOWN = 3 * 60 * 1000; // 3 minutes
 
 // Maximum time a conversation can last before force-ending (safety)
-const MAX_CONVERSATION_TIME = 60 * 1000; // 60 seconds
+const MAX_CONVERSATION_TIME = 45 * 1000; // 45 seconds
 
 // Last conversation time per pair
 const lastConversationTime = new Map();
 
 // Conversation start time for timeout
 let conversationStartTime = 0;
+
+// Maximum participants (strict)
+const MAX_PARTICIPANTS = 3;
 
 // Speech bubbles to render
 export const speechBubbles = new Map();
@@ -79,7 +86,7 @@ export function getCurrentConversationGroup() {
 
 // Force end any stuck conversation
 export function forceEndConversation() {
-  console.log('Force ending conversation');
+  console.log('⚠️ Force ending stuck conversation');
   for (const unit of currentConversationGroup) {
     unit.status = 'idle';
     activeConversations.delete(unit.id);
@@ -87,6 +94,9 @@ export function forceEndConversation() {
   }
   currentConversationGroup = [];
   currentConversationMessages = [];
+  conversationInProgress = false;
+  conversationHasStarted = false;
+  conversationStartTime = 0;
   hideConversationLog();
 }
 
@@ -100,12 +110,24 @@ export function checkStuckConversations() {
   }
 }
 
-// Allow a persona to join ongoing conversation
+// Allow a persona to join ongoing conversation (strict checks)
 export function joinConversation(unit, talkingUnits) {
-  if (currentConversationGroup.length >= 4) return; // Max 4 participants
-  if (currentConversationGroup.find(u => u.id === unit.id)) return; // Already in
+  // STRICT: Don't allow joining until conversation has actually started showing messages
+  if (!conversationHasStarted) {
+    console.log(`${unit.name} wants to join but conversation hasn't started yet`);
+    return;
+  }
   
-  // Check cooldown
+  // STRICT: Enforce max participants
+  if (currentConversationGroup.length >= MAX_PARTICIPANTS) {
+    console.log(`${unit.name} can't join - max ${MAX_PARTICIPANTS} participants reached`);
+    return;
+  }
+  
+  // Already in?
+  if (currentConversationGroup.find(u => u.id === unit.id)) return;
+  
+  // Check cooldown with all current participants
   const allIds = [...currentConversationGroup.map(u => u.id), unit.id];
   if (!canConverse(allIds)) return;
   
@@ -115,7 +137,7 @@ export function joinConversation(unit, talkingUnits) {
   
   // Show joining bubble
   speechBubbles.set(unit.id, {
-    text: `*joins the conversation*`,
+    text: `*joins*`,
     color: unit.color,
     expires: Date.now() + 2000
   });
@@ -126,8 +148,18 @@ export function joinConversation(unit, talkingUnits) {
 
 // Start conversation between two personas
 export async function startConversation(unit1, unit2, uiCallback) {
+  // STRICT: Only one conversation at a time
+  if (conversationInProgress) {
+    console.log('Conversation already in progress, skipping');
+    return;
+  }
+  
   if (!canConverse([unit1.id, unit2.id])) return;
   if (activeConversations.has(unit1.id) || activeConversations.has(unit2.id)) return;
+  
+  // Lock conversation
+  conversationInProgress = true;
+  conversationHasStarted = false;
   
   // Initialize
   currentConversationGroup = [unit1, unit2];
@@ -148,7 +180,7 @@ export async function startConversation(unit1, unit2, uiCallback) {
   const persona1 = getPersona(unit1.id);
   const persona2 = getPersona(unit2.id);
   
-  console.log(`Conversation starting: ${persona1.name} and ${persona2.name}`);
+  console.log(`🗣️ Conversation starting: ${persona1.name} and ${persona2.name}`);
   
   // Show conversation log UI
   showConversationLog([persona1, persona2]);
@@ -166,13 +198,23 @@ export async function startConversation(unit1, unit2, uiCallback) {
       uiCallback([persona1, persona2], conversation);
     }
     
+    console.log(`📝 Generated ${conversation.length} turns, displaying...`);
+    
     // Display messages sequentially
-    for (const turn of conversation) {
+    for (let i = 0; i < conversation.length; i++) {
+      const turn = conversation[i];
+      
       // Safety check - abort if conversation was force-ended
       if (currentConversationGroup.length === 0) break;
       
       const speakerUnit = currentConversationGroup.find(u => u.id === turn.speaker) || unit1;
       const speakerPersona = getPersona(speakerUnit.id);
+      
+      // Mark conversation as started after first message
+      if (i === 0) {
+        conversationHasStarted = true;
+        console.log('✅ Conversation has started, joining now allowed');
+      }
       
       // Store message
       currentConversationMessages.push({
@@ -186,8 +228,8 @@ export async function startConversation(unit1, unit2, uiCallback) {
       // Add to conversation log
       addToConversationLog(speakerUnit.id, turn.text, speakerUnit.color, speakerPersona?.name || speakerUnit.name);
       
-      // Read time based on length
-      const readTime = Math.max(3000, Math.min(8000, turn.text.length * 60));
+      // Read time based on length (shorter)
+      const readTime = Math.max(2500, Math.min(6000, turn.text.length * 50));
       
       // Show speech bubble
       speechBubbles.set(speakerUnit.id, {
@@ -203,7 +245,7 @@ export async function startConversation(unit1, unit2, uiCallback) {
       if (hoveredBubbleId !== speakerUnit.id) {
         speechBubbles.delete(speakerUnit.id);
       }
-      await new Promise(r => setTimeout(r, 400));
+      await new Promise(r => setTimeout(r, 300));
     }
     
     // Post to Discord
@@ -215,13 +257,17 @@ export async function startConversation(unit1, unit2, uiCallback) {
   }
   
   // End conversation - resume walking
+  console.log('🏁 Conversation ended, freeing participants');
   for (const unit of currentConversationGroup) {
     unit.status = 'idle';
     activeConversations.delete(unit.id);
+    speechBubbles.delete(unit.id);
   }
   
   currentConversationGroup = [];
   conversationStartTime = 0;
+  conversationInProgress = false;
+  conversationHasStarted = false;
   
   // Keep log visible for a bit, then fade
   setTimeout(() => {
@@ -234,6 +280,8 @@ export async function startConversation(unit1, unit2, uiCallback) {
 // Generate AI conversation (with memory)
 async function generateConversation(persona1, persona2) {
   const pairKey = getGroupKey([persona1.id, persona2.id]);
+  
+  console.log(`🤖 Generating conversation: ${persona1.name} + ${persona2.name}`);
   
   // Get past history
   let memoryContext = '';
@@ -255,8 +303,12 @@ async function generateConversation(persona1, persona2) {
   }
   
   try {
+    console.log('📡 Calling /api/conversation...');
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
+    const timeout = setTimeout(() => {
+      console.log('⏰ API call timed out after 25s');
+      controller.abort();
+    }, 25000);
     
     const response = await fetch('/api/conversation', {
       method: 'POST',
@@ -277,6 +329,7 @@ async function generateConversation(persona1, persona2) {
     
     if (response.ok) {
       const conversation = await response.json();
+      console.log(`✅ Got ${conversation.length} turns from API`);
       
       // Store in memory
       try {
@@ -294,12 +347,16 @@ async function generateConversation(persona1, persona2) {
       }
       
       return conversation;
+    } else {
+      const errText = await response.text();
+      console.error(`❌ API error: ${response.status} - ${errText}`);
     }
   } catch (e) {
-    console.error('Failed to generate conversation:', e);
+    console.error('❌ Failed to generate conversation:', e.message);
   }
   
-  // Fallback
+  // Fallback - use immediately, don't wait
+  console.log('⚡ Using fallback conversation');
   return [
     { speaker: persona1.id, text: `Hello ${persona2.name}! Good to see you.` },
     { speaker: persona2.id, text: `Likewise, ${persona1.name}. What's on your mind?` },

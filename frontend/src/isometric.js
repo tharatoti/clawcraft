@@ -1652,27 +1652,28 @@ class World {
   
   // Check if any personas are close enough to have a conversation
   checkPersonaCollisions(units) {
-    // Only check occasionally to reduce overhead
-    if (Math.random() > 0.02) return; // ~2% chance per frame
+    // Only check very occasionally to reduce overhead and conversation spam
+    if (Math.random() > 0.005) return; // ~0.5% chance per frame (was 2%)
     
     // Find all personas currently talking
     const talkingUnits = units.filter(u => u.status === 'talking');
     
     // If there's an active conversation, check if others want to join
-    if (talkingUnits.length > 0) {
+    // But only allow joining if conversation has actually started (has messages)
+    if (talkingUnits.length > 0 && talkingUnits.length < 3) {
       const conversationCenter = {
         x: talkingUnits.reduce((sum, u) => sum + u.gridX, 0) / talkingUnits.length,
         y: talkingUnits.reduce((sum, u) => sum + u.gridY, 0) / talkingUnits.length
       };
       
       for (const unit of units) {
-        if (unit.status !== 'talking') {
+        if (unit.status !== 'talking' && unit.status !== 'chatting') {
           const dx = unit.gridX - conversationCenter.x;
           const dy = unit.gridY - conversationCenter.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
           
-          // If close enough, they can join the conversation
-          if (dist < 1.5) {
+          // If very close, they can try to join (joinConversation will check if allowed)
+          if (dist < 1.0) {
             joinConversation(unit, talkingUnits);
           }
         }
