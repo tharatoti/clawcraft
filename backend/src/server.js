@@ -422,7 +422,7 @@ Only output the JSON array, nothing else.`;
     return;
   }
   
-  // Scatter all personas to random positions
+  // Scatter all personas to random positions AND broadcast to all clients
   if (req.url === '/api/personas/scatter' && req.method === 'POST') {
     const minX = 8, maxX = 47, minY = 8, maxY = 47;
     for (const [id, pos] of personaPositions) {
@@ -432,7 +432,11 @@ Only output the JSON array, nothing else.`;
       pos.targetY = null;
       pos.status = 'idle';
     }
-    console.log('Scattered all personas to random positions');
+    console.log('Scattered all personas - broadcasting to clients');
+    
+    // Broadcast new positions to ALL connected clients
+    broadcast({ type: 'forcePositions', payload: getPersonaPositions() });
+    
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ scattered: personaPositions.size }));
     return;

@@ -121,6 +121,11 @@ function handleMessage(data) {
       // Sync persona positions from server (for non-primary clients)
       world.syncPersonaPositions(data.payload);
       break;
+    case 'forcePositions':
+      // Admin command - force all clients to use these positions
+      console.log('🔄 Received force position update from server');
+      world.forcePersonaPositions(data.payload);
+      break;
     case 'session_update':
       updateSessionBuilding(data.payload);
       break;

@@ -618,6 +618,27 @@ class World {
     }
   }
   
+  // Force positions from server (admin command - overrides everything)
+  forcePersonaPositions(positions) {
+    console.log('🔄 Force-applying server positions to all personas');
+    
+    // Import and call forceEndConversation to clear any stuck state
+    import('./conversations.js').then(module => {
+      module.forceEndConversation();
+    });
+    
+    for (const [id, pos] of Object.entries(positions)) {
+      const unit = this.units.get(id);
+      if (unit) {
+        unit.gridX = pos.gridX;
+        unit.gridY = pos.gridY;
+        unit.targetX = pos.gridX; // Stop moving
+        unit.targetY = pos.gridY;
+        unit.status = 'idle';
+      }
+    }
+  }
+  
   // Send position updates to server
   sendPositionUpdates() {
     if (!this.ws || this.ws.readyState !== 1 || !this.isPrimaryClient) return;
