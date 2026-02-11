@@ -605,8 +605,24 @@ class World {
         if (dist < 30) {
           clicked = { type: 'unit', data: unit };
           
-          // If persona is clickable, open chat
-          if (unit.data.clickable && window.openPersonaChat) {
+          // If persona is in a conversation, open group chat UI
+          if (unit.status === 'talking') {
+            // Find all talking personas nearby
+            const talkingNearby = [...this.units.values()].filter(u => 
+              u.status === 'talking' && 
+              Math.sqrt((u.gridX - unit.gridX) ** 2 + (u.gridY - unit.gridY) ** 2) < 5
+            );
+            
+            if (talkingNearby.length > 0 && window.joinConversationUI) {
+              window.joinConversationUI(talkingNearby.map(u => ({
+                id: u.id,
+                name: u.name,
+                color: u.color
+              })));
+            }
+          }
+          // If persona is clickable and not talking, open 1:1 chat
+          else if (unit.data.clickable && window.openPersonaChat) {
             // Pause the avatar while chatting
             unit.status = 'chatting';
             unit.targetX = unit.gridX;

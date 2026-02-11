@@ -357,5 +357,45 @@ export function initChat() {
   window.playPersonaHello = () => chatInstance.playHello();
   window.openPersonaChat = (id) => chatInstance.openChat(id);
   
+  // Join ongoing conversation
+  window.joinConversationUI = (participants) => {
+    // Show a modal to let user join the conversation
+    let modal = document.getElementById('join-conversation-modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'join-conversation-modal';
+      modal.className = 'join-conversation-modal';
+      document.body.appendChild(modal);
+    }
+    
+    const names = participants.map(p => `<span style="color:${p.color}">${p.name}</span>`).join(' & ');
+    
+    modal.innerHTML = `
+      <div class="join-modal-content">
+        <h3>🗣️ Ongoing Conversation</h3>
+        <p>${names} are talking.</p>
+        <p>Would you like to join?</p>
+        <div class="join-modal-buttons">
+          <button onclick="window.joinActiveConversation('${participants.map(p=>p.id).join(',')}')">Join Conversation</button>
+          <button onclick="this.parentElement.parentElement.parentElement.classList.add('hidden')">Just Watch</button>
+        </div>
+      </div>
+    `;
+    modal.classList.remove('hidden');
+  };
+  
+  // Actually join the conversation
+  window.joinActiveConversation = async (participantIds) => {
+    const ids = participantIds.split(',');
+    document.getElementById('join-conversation-modal')?.classList.add('hidden');
+    
+    // Open a group chat with all participants
+    // For now, open chat with the first persona
+    if (ids.length > 0 && chatInstance) {
+      chatInstance.openChat(ids[0]);
+      chatInstance.addMessage('system', `You joined a conversation with ${ids.length} personas. Say something!`);
+    }
+  };
+  
   return chatInstance;
 }

@@ -703,3 +703,75 @@ body {
 .conversation-msg:nth-child(even) .msg-sender {
   text-align: right;
 }
+
+/* Join Conversation Modal */
+.join-conversation-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.95);
+  border: 2px solid var(--lcars-orange);
+  border-radius: 15px;
+  padding: 20px;
+  z-index: 1001;
+  text-align: center;
+  min-width: 300px;
+  animation: modalFadeIn 0.3s ease-out;
+}
+
+.join-conversation-modal.hidden {
+  display: none;
+}
+
+@keyframes modalFadeIn {
+  from { transform: translate(-50%, -50%) scale(0.9); opacity: 0; }
+  to { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+}
+
+.join-modal-content h3 {
+  color: var(--lcars-orange);
+  margin-bottom: 15px;
+  font-size: 18px;
+}
+
+.join-modal-content p {
+  color: #fff;
+  margin: 10px 0;
+  font-size: 14px;
+}
+
+.join-modal-buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+.join-modal-buttons button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: all 0.2s;
+}
+
+.join-modal-buttons button:first-child {
+  background: var(--lcars-orange);
+  color: #000;
+}
+
+.join-modal-buttons button:first-child:hover {
+  background: #ffaa33;
+}
+
+.join-modal-buttons button:last-child {
+  background: transparent;
+  border: 1px solid var(--lcars-purple);
+  color: var(--lcars-purple);
+}
+
+.join-modal-buttons button:last-child:hover {
+  background: rgba(204, 153, 204, 0.2);
+}
