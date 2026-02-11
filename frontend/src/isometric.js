@@ -246,16 +246,23 @@ class AnimatedUnit {
     this.targetY = y;
   }
   
-  // Wander across the entire visible terrain
-  wander(minX, maxX, minY, maxY) {
-    // Don't wander if talking
-    if (this.status === 'talking') return;
+  // Wander across the passable terrain (respects terrain bounds)
+  wander(minX, maxX, minY, maxY, isPassableFn = null) {
+    // Don't wander if talking or chatting
+    if (this.status === 'talking' || this.status === 'chatting') return;
     
     if (this.status === 'idle' && Math.random() < 0.008) {
-      // Pick a random spot within terrain bounds
-      const newX = minX + Math.random() * (maxX - minX);
-      const newY = minY + Math.random() * (maxY - minY);
-      this.setTarget(newX, newY);
+      // Try to find a valid passable destination
+      for (let attempt = 0; attempt < 10; attempt++) {
+        const newX = minX + Math.random() * (maxX - minX);
+        const newY = minY + Math.random() * (maxY - minY);
+        
+        // Check if passable (if function provided)
+        if (!isPassableFn || isPassableFn(newX, newY)) {
+          this.setTarget(newX, newY);
+          break;
+        }
+      }
     }
     
     // Keep within bounds
@@ -276,6 +283,14 @@ class Pipeline {
     this.flowOffset = 0;
   }
 }
+
+// Terrain types for edge features
+const TERRAIN = {
+  PASSABLE: 0,
+  WATER: 1,
+  MOUNTAIN: 2,
+  CLIFF: 3
+};
 
 // Game world
 class World {
@@ -302,9 +317,20 @@ class World {
     this.pipelines = [];
     this.selectedEntity = null;
     
-    // Grid (larger for more space)
-    this.gridWidth = 40;
-    this.gridHeight = 40;
+    // Grid (expanded for edge terrain)
+    this.gridWidth = 55;
+    this.gridHeight = 55;
+    
+    // Terrain map (impassable edges)
+    this.terrainMap = this.generateTerrainMap();
+    
+    // Passable bounds (inside the edge terrain)
+    this.passableBounds = {
+      minX: 5,
+      maxX: 50,
+      minY: 5,
+      maxY: 50
+    };
     
     // State
     this.state = {
@@ -322,15 +348,59 @@ class World {
     this.isDragging = false;
     this.lastMouse = { x: 0, y: 0 };
     
+    // Server sync
+    this.ws = null;
+    this.isPrimaryClient = false; // First connected client drives simulation
+    this.lastPositionSync = 0;
+    
     this.setupInput();
   }
   
-  async init() {
+  // Generate terrain map with impassable edges
+  generateTerrainMap() {
+    const map = [];
+    for (let x = 0; x < this.gridWidth; x++) {
+      map[x] = [];
+      for (let y = 0; y < this.gridHeight; y++) {
+        const edgeDist = Math.min(x, y, this.gridWidth - 1 - x, this.gridHeight - 1 - y);
+        
+        if (edgeDist < 2) {
+          // Outer edge - deep water or high mountains
+          map[x][y] = (x + y) % 2 === 0 ? TERRAIN.WATER : TERRAIN.MOUNTAIN;
+        } else if (edgeDist < 5) {
+          // Transition zone - mix of cliffs and shallow water
+          const noise = Math.sin(x * 0.5) * Math.cos(y * 0.5);
+          if (noise > 0.3) {
+            map[x][y] = TERRAIN.MOUNTAIN;
+          } else if (noise < -0.3) {
+            map[x][y] = TERRAIN.WATER;
+          } else {
+            map[x][y] = TERRAIN.CLIFF;
+          }
+        } else {
+          map[x][y] = TERRAIN.PASSABLE;
+        }
+      }
+    }
+    return map;
+  }
+  
+  // Check if a position is passable
+  isPassable(x, y) {
+    const ix = Math.floor(x);
+    const iy = Math.floor(y);
+    if (ix < 0 || ix >= this.gridWidth || iy < 0 || iy >= this.gridHeight) {
+      return false;
+    }
+    return this.terrainMap[ix][iy] === TERRAIN.PASSABLE;
+  }
+  
+  async init(serverPositions = null) {
     await this.assets.loadTheme(this.currentTheme);
     
-    // Center camera
+    // Center camera (adjusted for larger map)
     this.camera.x = this.canvas.width / 2;
-    this.camera.y = -200;
+    this.camera.y = -100;
     
     // Create base layout with more spacing
     this.createBaseLayout();
@@ -338,93 +408,99 @@ class World {
     // Create pipelines
     this.createPipelines();
     
-    // Create mastermind personas
-    this.createMastermindPersonas();
+    // Create mastermind personas (with server positions if available)
+    this.createMastermindPersonas(serverPositions);
     
     console.log('ClawCraft v2 initialized');
+    console.log(`Map size: ${this.gridWidth}x${this.gridHeight}`);
+    console.log(`Passable area: ${this.passableBounds.minX}-${this.passableBounds.maxX}, ${this.passableBounds.minY}-${this.passableBounds.maxY}`);
   }
   
   createBaseLayout() {
+    // Offset for new larger map (center in passable area)
+    const ox = 12; // offset x
+    const oy = 8;  // offset y
+    
     // Core - Command Center (Gateway)
-    this.createBuilding('command-center', 15, 15, {
+    this.createBuilding('command-center', ox + 15, oy + 15, {
       id: 'gateway',
       name: 'OPENCLAW GATEWAY',
       status: 'active'
     });
     
     // Agents section (left side)
-    this.createBuilding('barracks', 8, 12, {
+    this.createBuilding('barracks', ox + 8, oy + 12, {
       id: 'jarvis',
       name: 'JARVIS AGENT',
       status: 'idle'
     });
     
-    this.createBuilding('barracks', 6, 16, {
+    this.createBuilding('barracks', ox + 6, oy + 18, {
       id: 'agent-spawner',
       name: 'AGENT SPAWNER',
       status: 'active'
     });
     
     // Automation section (right side)
-    this.createBuilding('factory', 22, 12, {
+    this.createBuilding('factory', ox + 24, oy + 12, {
       id: 'cron',
       name: 'CRON SCHEDULER',
       status: 'active'
     });
     
     // Resources (top)
-    this.createBuilding('powerplant', 12, 8, {
+    this.createBuilding('powerplant', ox + 12, oy + 8, {
       id: 'tokens',
       name: 'TOKEN SUPPLY',
       status: 'active'
     });
     
-    this.createBuilding('powerplant', 18, 8, {
+    this.createBuilding('powerplant', ox + 20, oy + 8, {
       id: 'budget',
       name: 'BUDGET TRACKER',
       status: 'active'
     });
     
-    // External integrations (bottom corners)
-    this.createBuilding('extraction', 5, 22, {
+    // External integrations (spread out)
+    this.createBuilding('extraction', ox + 5, oy + 24, {
       id: 'home-assistant',
       name: 'HOME ASSISTANT',
       status: 'connected'
     });
     
-    this.createBuilding('extraction', 25, 22, {
+    this.createBuilding('extraction', ox + 28, oy + 24, {
       id: 'alpaca',
       name: 'ALPACA TRADING',
       status: 'connected'
     });
     
     // Services (scattered)
-    this.createBuilding('lab', 10, 20, {
+    this.createBuilding('lab', ox + 10, oy + 22, {
       id: 'knowledge-bridge',
       name: 'KNOWLEDGE BRIDGE',
       status: 'active'
     });
     
-    this.createBuilding('lab', 20, 20, {
+    this.createBuilding('lab', ox + 22, oy + 22, {
       id: 'avatar-dashboard',
       name: 'AVATAR DASHBOARD',
       status: 'active'
     });
     
-    this.createBuilding('lab', 15, 25, {
+    this.createBuilding('lab', ox + 16, oy + 28, {
       id: 'wiki',
       name: 'WIKI (DOCSIFY)',
       status: 'active'
     });
     
     // Mastermind boardroom (special area at bottom)
-    this.createBuilding('defense', 12, 30, {
+    this.createBuilding('defense', ox + 12, oy + 34, {
       id: 'boardroom',
       name: 'MASTERMIND BOARDROOM',
       status: 'active'
     });
     
-    this.createBuilding('defense', 18, 30, {
+    this.createBuilding('defense', ox + 20, oy + 34, {
       id: 'boardroom-2',
       name: 'AI BOARD OF DIRECTORS',
       status: 'active'
@@ -453,8 +529,8 @@ class World {
     this.pipelines.push(new Pipeline('boardroom', 'boardroom-2', 'data'));
   }
   
-  createMastermindPersonas() {
-    // All 13 Mastermind personas
+  createMastermindPersonas(serverPositions = null) {
+    // All 17 Mastermind personas
     const personas = [
       // Marketing Masters
       { id: 'hormozi', name: 'Alex Hormozi', color: '#ff6600', role: 'Business & Offers' },
@@ -471,32 +547,104 @@ class World {
       // Modern Visionaries
       { id: 'musk', name: 'Elon Musk', color: '#00cc66', role: 'Innovation' },
       { id: 'mises', name: 'Ludwig von Mises', color: '#6699cc', role: 'Economics' },
-      { id: 'adams', name: 'Scott Adams', color: '#ff6699', role: 'Systems' }
+      { id: 'adams', name: 'Scott Adams', color: '#ff6699', role: 'Systems' },
+      // New additions
+      { id: 'munger', name: 'Charlie Munger', color: '#cc9966', role: 'Mental Models' },
+      { id: 'aurelius', name: 'Marcus Aurelius', color: '#9999cc', role: 'Stoicism' },
+      { id: 'feynman', name: 'Richard Feynman', color: '#66ccff', role: 'Physics & Curiosity' },
+      { id: 'dalio', name: 'Ray Dalio', color: '#ff9933', role: 'Principles' }
     ];
     
-    // Place personas in two arcs around the boardroom area
-    const centerX = 15;
-    const centerY = 32;
+    const { minX, maxX, minY, maxY } = this.passableBounds;
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2 + 5; // Slightly toward boardroom
     
     personas.forEach((p, i) => {
-      // Two rows of personas
-      const row = i < 7 ? 0 : 1;
-      const indexInRow = row === 0 ? i : i - 7;
-      const countInRow = row === 0 ? 7 : 6;
+      // Use server position if available, otherwise calculate default
+      const serverPos = serverPositions?.[p.id];
       
-      const angle = (indexInRow / countInRow) * Math.PI - Math.PI / 2;
-      const radius = 4 + row * 2;
+      let startX, startY;
+      if (serverPos) {
+        startX = serverPos.gridX;
+        startY = serverPos.gridY;
+      } else {
+        // Scatter across the map
+        const angle = (i / personas.length) * Math.PI * 2;
+        const radius = 8 + (i % 3) * 5;
+        startX = centerX + Math.cos(angle) * radius;
+        startY = centerY + Math.sin(angle) * radius * 0.6;
+      }
       
       const unit = new AnimatedUnit({
         id: p.id,
         name: p.name,
-        gridX: centerX + Math.cos(angle) * radius,
-        gridY: centerY + Math.sin(angle) * radius * 0.5, // Flatten for isometric
+        gridX: startX,
+        gridY: startY,
         color: p.color,
         data: { type: 'persona', role: p.role, clickable: true }
       });
+      
+      // Restore target and status from server
+      if (serverPos) {
+        if (serverPos.targetX !== null) {
+          unit.targetX = serverPos.targetX;
+          unit.targetY = serverPos.targetY;
+        }
+        if (serverPos.status) {
+          unit.status = serverPos.status;
+        }
+      }
+      
       this.units.set(p.id, unit);
     });
+  }
+  
+  // Sync persona positions from server
+  syncPersonaPositions(positions) {
+    for (const [id, pos] of Object.entries(positions)) {
+      const unit = this.units.get(id);
+      if (unit && !this.isPrimaryClient) {
+        // Non-primary clients follow server state
+        unit.gridX = pos.gridX;
+        unit.gridY = pos.gridY;
+        if (pos.targetX !== null) {
+          unit.targetX = pos.targetX;
+          unit.targetY = pos.targetY;
+        }
+        if (pos.status) {
+          unit.status = pos.status;
+        }
+      }
+    }
+  }
+  
+  // Send position updates to server
+  sendPositionUpdates() {
+    if (!this.ws || this.ws.readyState !== 1 || !this.isPrimaryClient) return;
+    
+    const now = Date.now();
+    if (now - this.lastPositionSync < 500) return; // Throttle to 2 updates/sec
+    this.lastPositionSync = now;
+    
+    const updates = {};
+    for (const [id, unit] of this.units) {
+      updates[id] = {
+        gridX: unit.gridX,
+        gridY: unit.gridY,
+        targetX: unit.targetX,
+        targetY: unit.targetY,
+        status: unit.status
+      };
+    }
+    
+    this.ws.send(JSON.stringify({ type: 'personaBatchUpdate', payload: updates }));
+  }
+  
+  // Set WebSocket connection
+  setWebSocket(ws) {
+    this.ws = ws;
+    // First connected client becomes primary
+    this.isPrimaryClient = true;
   }
   
   createBuilding(type, gridX, gridY, data = {}) {
@@ -768,10 +916,12 @@ class World {
   update(dt) {
     // Update animated units
     const unitArray = [...this.units.values()];
+    const { minX, maxX, minY, maxY } = this.passableBounds;
+    
     for (const unit of unitArray) {
       unit.update(dt);
-      // Make personas wander entire visible terrain (minX, maxX, minY, maxY)
-      unit.wander(-5, 40, 5, 35);
+      // Make personas wander within passable terrain bounds
+      unit.wander(minX, maxX, minY, maxY, this.isPassable.bind(this));
     }
     
     // Check for persona collisions/conversations
@@ -784,6 +934,9 @@ class World {
     for (const pipeline of this.pipelines) {
       pipeline.flowOffset = (pipeline.flowOffset + dt * 0.001) % 1;
     }
+    
+    // Sync positions to server (primary client only)
+    this.sendPositionUpdates();
   }
   
   render(timestamp) {
@@ -887,10 +1040,10 @@ class World {
         const p3 = ISO.toScreen(x + 1, y + 1);
         const p4 = ISO.toScreen(x, y + 1);
         
-        // Terrain type based on noise
+        const terrainType = this.terrainMap[x][y];
         const noise = this.getTerrainNoise(x, y);
         
-        // Base tile fill with gradient
+        // Base tile fill based on terrain type
         ctx.beginPath();
         ctx.moveTo(p1.x, p1.y);
         ctx.lineTo(p2.x, p2.y);
@@ -898,28 +1051,119 @@ class World {
         ctx.lineTo(p4.x, p4.y);
         ctx.closePath();
         
-        // Terrain color variation
-        if (noise > 0.7) {
-          // Tech platform (near buildings)
-          ctx.fillStyle = 'rgba(30, 30, 50, 0.8)';
-        } else if (noise > 0.4) {
-          // Normal ground
-          ctx.fillStyle = 'rgba(20, 20, 35, 0.6)';
+        if (terrainType === TERRAIN.WATER) {
+          // Deep water - animated waves
+          const wave = Math.sin(Date.now() * 0.002 + x * 0.5 + y * 0.3) * 0.15 + 0.85;
+          ctx.fillStyle = `rgba(20, 60, 100, ${wave})`;
+          ctx.fill();
+          
+          // Water shine
+          ctx.strokeStyle = `rgba(100, 150, 200, ${wave * 0.3})`;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          
+          // Wave highlights
+          this.renderWaterWaves(x, y, p1, p3);
+        } else if (terrainType === TERRAIN.MOUNTAIN) {
+          // Rocky mountains
+          ctx.fillStyle = 'rgba(60, 50, 45, 0.95)';
+          ctx.fill();
+          
+          // Draw mountain peaks
+          this.renderMountain(x, y, p1, p2, p3, p4);
+        } else if (terrainType === TERRAIN.CLIFF) {
+          // Cliff/transition terrain
+          ctx.fillStyle = 'rgba(45, 40, 35, 0.9)';
+          ctx.fill();
+          
+          // Rocky texture
+          ctx.strokeStyle = 'rgba(70, 60, 50, 0.5)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
         } else {
-          // Darker terrain
-          ctx.fillStyle = 'rgba(15, 15, 25, 0.5)';
+          // Passable terrain - normal variation
+          if (noise > 0.7) {
+            ctx.fillStyle = 'rgba(30, 30, 50, 0.8)';
+          } else if (noise > 0.4) {
+            ctx.fillStyle = 'rgba(20, 20, 35, 0.6)';
+          } else {
+            ctx.fillStyle = 'rgba(15, 15, 25, 0.5)';
+          }
+          ctx.fill();
+          
+          // Grid lines (only on passable terrain)
+          ctx.strokeStyle = colors.grid;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          
+          // Add terrain decorations
+          this.renderTerrainDecoration(x, y, noise);
         }
-        ctx.fill();
-        
-        // Grid lines
-        ctx.strokeStyle = colors.grid;
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        
-        // Add terrain decorations
-        this.renderTerrainDecoration(x, y, noise);
       }
     }
+  }
+  
+  renderWaterWaves(x, y, p1, p3) {
+    const { ctx } = this;
+    const time = Date.now() * 0.001;
+    const centerX = (p1.x + p3.x) / 2;
+    const centerY = (p1.y + p3.y) / 2;
+    
+    // Small wave ripples
+    const waveOffset = Math.sin(time + x * 0.7 + y * 0.5) * 3;
+    
+    ctx.strokeStyle = 'rgba(150, 200, 255, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(centerX - 15, centerY + waveOffset);
+    ctx.quadraticCurveTo(centerX, centerY - 5 + waveOffset, centerX + 15, centerY + waveOffset);
+    ctx.stroke();
+  }
+  
+  renderMountain(x, y, p1, p2, p3, p4) {
+    const { ctx } = this;
+    const seed = (x * 31 + y * 17) % 100;
+    const height = 20 + (seed % 30);
+    
+    const centerX = (p1.x + p3.x) / 2;
+    const baseY = (p1.y + p3.y) / 2;
+    
+    // Mountain shadow
+    ctx.fillStyle = 'rgba(30, 25, 20, 0.8)';
+    ctx.beginPath();
+    ctx.moveTo(centerX - 25, baseY);
+    ctx.lineTo(centerX + 5, baseY - height);
+    ctx.lineTo(centerX + 25, baseY);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Mountain face (lit side)
+    ctx.fillStyle = 'rgba(80, 70, 60, 0.9)';
+    ctx.beginPath();
+    ctx.moveTo(centerX - 20, baseY);
+    ctx.lineTo(centerX, baseY - height);
+    ctx.lineTo(centerX + 20, baseY);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Snow cap on taller mountains
+    if (height > 35) {
+      ctx.fillStyle = 'rgba(220, 230, 240, 0.8)';
+      ctx.beginPath();
+      ctx.moveTo(centerX - 8, baseY - height + 15);
+      ctx.lineTo(centerX, baseY - height);
+      ctx.lineTo(centerX + 8, baseY - height + 15);
+      ctx.closePath();
+      ctx.fill();
+    }
+    
+    // Rocky highlights
+    ctx.strokeStyle = 'rgba(100, 90, 80, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(centerX - 10, baseY - height / 2);
+    ctx.lineTo(centerX + 5, baseY - height / 3);
+    ctx.stroke();
   }
   
   getTerrainNoise(x, y) {

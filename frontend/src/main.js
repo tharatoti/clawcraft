@@ -29,9 +29,25 @@ function createThemeSelector() {
   });
 }
 
+// Fetch initial persona positions from server before starting
+async function fetchInitialPositions() {
+  try {
+    const res = await fetch('/api/personas/positions');
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (e) {
+    console.warn('Could not fetch persona positions, using defaults');
+  }
+  return null;
+}
+
 // Initialize
 async function init() {
-  await world.init();
+  // Get server-side persona positions first
+  const positions = await fetchInitialPositions();
+  
+  await world.init(positions);
   world.startLoop();
   createThemeSelector();
   connectWebSocket();
@@ -59,6 +75,9 @@ function connectWebSocket() {
       statusEl.textContent = '● CONNECTED';
       statusEl.className = 'status-item connected';
       reconnectAttempts = 0;
+      
+      // Set WS on world for position syncing
+      world.setWebSocket(ws);
       
       // Request full state
       ws.send(JSON.stringify({ type: 'subscribe', channels: ['state', 'sessions', 'processes'] }));
@@ -97,6 +116,10 @@ function handleMessage(data) {
   switch (data.type) {
     case 'state':
       world.updateState(data.payload);
+      break;
+    case 'personaPositions':
+      // Sync persona positions from server (for non-primary clients)
+      world.syncPersonaPositions(data.payload);
       break;
     case 'session_update':
       updateSessionBuilding(data.payload);

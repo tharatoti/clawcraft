@@ -10,6 +10,58 @@ const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL || '2000');
 // Conversation memory - stores past conversations between persona pairs
 const conversationMemory = new Map();
 
+// Persona positions - tracked server-side for persistence across client refreshes
+const personaPositions = new Map();
+
+// Initialize persona positions (scattered across the map)
+function initializePersonaPositions() {
+  const personas = [
+    'hormozi', 'robbins', 'kennedy', 'abraham', 'halbert',
+    'goggins', 'rosenberg', 'naval', 'franklin', 'lewis',
+    'musk', 'mises', 'adams', 'munger', 'aurelius', 'feynman', 'dalio'
+  ];
+  
+  // Spawn in various locations across the map
+  personas.forEach((id, i) => {
+    const angle = (i / personas.length) * Math.PI * 2;
+    const radius = 8 + Math.random() * 10;
+    personaPositions.set(id, {
+      gridX: 20 + Math.cos(angle) * radius,
+      gridY: 25 + Math.sin(angle) * radius * 0.6, // Flatten for isometric
+      targetX: null,
+      targetY: null,
+      status: 'idle',
+      lastUpdate: Date.now()
+    });
+  });
+  
+  console.log(`Initialized ${personaPositions.size} persona positions`);
+}
+
+// Update persona position from client
+function updatePersonaPosition(id, x, y, targetX, targetY, status) {
+  const pos = personaPositions.get(id);
+  if (pos) {
+    pos.gridX = x;
+    pos.gridY = y;
+    pos.targetX = targetX;
+    pos.targetY = targetY;
+    pos.status = status;
+    pos.lastUpdate = Date.now();
+  }
+}
+
+// Get all persona positions
+function getPersonaPositions() {
+  const positions = {};
+  for (const [id, pos] of personaPositions) {
+    positions[id] = { ...pos };
+  }
+  return positions;
+}
+
+initializePersonaPositions();
+
 // State cache
 let currentState = {
   tokens: 0,
@@ -324,6 +376,36 @@ Only output the JSON array, nothing else.`;
     return;
   }
   
+  // Get persona positions (for initial sync)
+  if (req.url === '/api/personas/positions' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(getPersonaPositions()));
+    return;
+  }
+  
+  // Update persona position (batch updates from clients)
+  if (req.url === '/api/personas/positions' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        const updates = JSON.parse(body);
+        
+        // Apply position updates
+        for (const [id, pos] of Object.entries(updates)) {
+          updatePersonaPosition(id, pos.gridX, pos.gridY, pos.targetX, pos.targetY, pos.status);
+        }
+        
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+  
   res.writeHead(404);
   res.end('Not found');
 });
@@ -339,6 +421,9 @@ wss.on('connection', (ws) => {
   
   // Send current state
   ws.send(JSON.stringify({ type: 'state', payload: currentState }));
+  
+  // Send persona positions
+  ws.send(JSON.stringify({ type: 'personaPositions', payload: getPersonaPositions() }));
   
   ws.on('message', (msg) => {
     try {
@@ -369,6 +454,28 @@ function handleClientMessage(ws, data) {
     case 'ping':
       ws.send(JSON.stringify({ type: 'pong' }));
       break;
+    case 'personaUpdate':
+      // Update server-side position from client
+      const { id, gridX, gridY, targetX, targetY, status } = data.payload;
+      updatePersonaPosition(id, gridX, gridY, targetX, targetY, status);
+      break;
+    case 'personaBatchUpdate':
+      // Batch update from primary client
+      for (const [id, pos] of Object.entries(data.payload)) {
+        updatePersonaPosition(id, pos.gridX, pos.gridY, pos.targetX, pos.targetY, pos.status);
+      }
+      // Broadcast to other clients
+      broadcastExcept(ws, { type: 'personaPositions', payload: getPersonaPositions() });
+      break;
+  }
+}
+
+function broadcastExcept(excludeWs, data) {
+  const message = JSON.stringify(data);
+  for (const client of clients) {
+    if (client !== excludeWs && client.readyState === 1) {
+      client.send(message);
+    }
   }
 }
 
