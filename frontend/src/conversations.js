@@ -18,19 +18,25 @@ let conversationInProgress = false; // True while generating/displaying
 let conversationHasStarted = false; // True once first message shown
 
 // Conversation cooldown per persona pair (ms)
-const CONVERSATION_COOLDOWN = 3 * 60 * 1000; // 3 minutes
+const CONVERSATION_COOLDOWN = 2 * 60 * 1000; // 2 minutes
 
-// Maximum time a conversation can last before force-ending (safety)
-const MAX_CONVERSATION_TIME = 45 * 1000; // 45 seconds
+// Maximum time waiting for API before using fallback
+const API_TIMEOUT = 10 * 1000; // 10 seconds
+
+// Maximum time for awkward silence before giving up
+const AWKWARD_SILENCE_TIMEOUT = 15 * 1000; // 15 seconds with no dialog = move on
+
+// Maximum time a conversation can last
+const MAX_CONVERSATION_TIME = 60 * 1000; // 60 seconds total
+
+// Chance to actually stop for a conversation (not every bump)
+const CONVERSATION_CHANCE = 0.4; // 40% chance to engage
 
 // Last conversation time per pair
 const lastConversationTime = new Map();
 
 // Conversation start time for timeout
 let conversationStartTime = 0;
-
-// Maximum participants (strict)
-const MAX_PARTICIPANTS = 3;
 
 // Speech bubbles to render
 export const speechBubbles = new Map();
@@ -87,6 +93,24 @@ export function getCurrentConversationGroup() {
 // Force end any stuck conversation
 export function forceEndConversation() {
   console.log('⚠️ Force ending stuck conversation');
+  endConversationCleanup();
+}
+
+// End conversation early (awkward silence, API fail, etc)
+function endConversationEarly(reason) {
+  console.log(`🚶 Ending conversation early: ${reason}`);
+  
+  // Show brief message in log
+  addToConversationLog('system', reason, '#666', 'System');
+  
+  // Brief pause then cleanup
+  setTimeout(() => {
+    endConversationCleanup();
+  }, 1500);
+}
+
+// Shared cleanup logic
+function endConversationCleanup() {
   for (const unit of currentConversationGroup) {
     unit.status = 'idle';
     activeConversations.delete(unit.id);
@@ -110,26 +134,21 @@ export function checkStuckConversations() {
   }
 }
 
-// Allow a persona to join ongoing conversation (strict checks)
+// Allow a persona to join ongoing conversation (flexible - anyone can join active conversations)
 export function joinConversation(unit, talkingUnits) {
-  // STRICT: Don't allow joining until conversation has actually started showing messages
+  // Must have an active conversation with actual dialog
   if (!conversationHasStarted) {
-    console.log(`${unit.name} wants to join but conversation hasn't started yet`);
-    return;
-  }
-  
-  // STRICT: Enforce max participants
-  if (currentConversationGroup.length >= MAX_PARTICIPANTS) {
-    console.log(`${unit.name} can't join - max ${MAX_PARTICIPANTS} participants reached`);
-    return;
+    return; // Silent fail - conversation hasn't started yet
   }
   
   // Already in?
   if (currentConversationGroup.find(u => u.id === unit.id)) return;
   
-  // Check cooldown with all current participants
-  const allIds = [...currentConversationGroup.map(u => u.id), unit.id];
-  if (!canConverse(allIds)) return;
+  // Random chance to join vs just walk by
+  if (Math.random() > 0.6) {
+    console.log(`${unit.name} walks past without joining`);
+    return;
+  }
   
   console.log(`${unit.name} joins the conversation!`);
   unit.status = 'talking';
@@ -148,14 +167,19 @@ export function joinConversation(unit, talkingUnits) {
 
 // Start conversation between two personas
 export async function startConversation(unit1, unit2, uiCallback) {
-  // STRICT: Only one conversation at a time
+  // Only one conversation at a time
   if (conversationInProgress) {
-    console.log('Conversation already in progress, skipping');
     return;
   }
   
   if (!canConverse([unit1.id, unit2.id])) return;
   if (activeConversations.has(unit1.id) || activeConversations.has(unit2.id)) return;
+  
+  // Random chance to actually engage (not every bump triggers convo)
+  if (Math.random() > CONVERSATION_CHANCE) {
+    console.log(`${unit1.name} and ${unit2.name} pass each other without stopping`);
+    return;
+  }
   
   // Lock conversation
   conversationInProgress = true;
@@ -185,9 +209,20 @@ export async function startConversation(unit1, unit2, uiCallback) {
   // Show conversation log UI
   showConversationLog([persona1, persona2]);
   
+  // Set awkward silence timeout - if no dialog in X seconds, abort
+  const awkwardTimeout = setTimeout(() => {
+    if (!conversationHasStarted && conversationInProgress) {
+      console.log('⏰ Awkward silence - no dialog generated, moving on');
+      endConversationEarly('*awkward silence*');
+    }
+  }, AWKWARD_SILENCE_TIMEOUT);
+  
   try {
-    // Generate conversation
+    // Generate conversation (with timeout for awkward silence)
     const conversation = await generateConversation(persona1, persona2);
+    
+    // Clear the awkward silence timeout since we got a response
+    clearTimeout(awkwardTimeout);
     
     if (!conversation || conversation.length === 0) {
       throw new Error('Empty conversation generated');
@@ -205,7 +240,7 @@ export async function startConversation(unit1, unit2, uiCallback) {
       const turn = conversation[i];
       
       // Safety check - abort if conversation was force-ended
-      if (currentConversationGroup.length === 0) break;
+      if (currentConversationGroup.length === 0 || !conversationInProgress) break;
       
       const speakerUnit = currentConversationGroup.find(u => u.id === turn.speaker) || unit1;
       const speakerPersona = getPersona(speakerUnit.id);
@@ -228,8 +263,8 @@ export async function startConversation(unit1, unit2, uiCallback) {
       // Add to conversation log
       addToConversationLog(speakerUnit.id, turn.text, speakerUnit.color, speakerPersona?.name || speakerUnit.name);
       
-      // Read time based on length (shorter)
-      const readTime = Math.max(2500, Math.min(6000, turn.text.length * 50));
+      // Read time based on length
+      const readTime = Math.max(2000, Math.min(5000, turn.text.length * 45));
       
       // Show speech bubble
       speechBubbles.set(speakerUnit.id, {
@@ -245,7 +280,7 @@ export async function startConversation(unit1, unit2, uiCallback) {
       if (hoveredBubbleId !== speakerUnit.id) {
         speechBubbles.delete(speakerUnit.id);
       }
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise(r => setTimeout(r, 250));
     }
     
     // Post to Discord
@@ -254,6 +289,7 @@ export async function startConversation(unit1, unit2, uiCallback) {
     
   } catch (e) {
     console.error('Conversation error:', e);
+    clearTimeout(awkwardTimeout);
   }
   
   // End conversation - resume walking
@@ -277,38 +313,20 @@ export async function startConversation(unit1, unit2, uiCallback) {
   }, 5000);
 }
 
-// Generate AI conversation (with memory)
+// Generate AI conversation (with memory) - fast timeout, reliable fallback
 async function generateConversation(persona1, persona2) {
   const pairKey = getGroupKey([persona1.id, persona2.id]);
   
   console.log(`🤖 Generating conversation: ${persona1.name} + ${persona2.name}`);
   
-  // Get past history
-  let memoryContext = '';
-  try {
-    const memRes = await fetch(`/api/memory/conversations?pair=${pairKey}`);
-    if (memRes.ok) {
-      const history = await memRes.json();
-      if (history.length > 0) {
-        const lastConvo = history[history.length - 1];
-        const summary = lastConvo.conversation.map(c => {
-          const name = c.speaker === persona1.id ? persona1.name : persona2.name;
-          return `${name}: "${c.text}"`;
-        }).join('\n');
-        memoryContext = `\n\nThey spoke recently:\n${summary}\n\nReference or continue from their previous conversation.`;
-      }
-    }
-  } catch (e) {
-    console.log('No memory available');
-  }
-  
+  // Skip memory lookup to be faster
   try {
     console.log('📡 Calling /api/conversation...');
     const controller = new AbortController();
     const timeout = setTimeout(() => {
-      console.log('⏰ API call timed out after 25s');
+      console.log('⏰ API timeout - using fallback');
       controller.abort();
-    }, 25000);
+    }, API_TIMEOUT);
     
     const response = await fetch('/api/conversation', {
       method: 'POST',
@@ -320,7 +338,7 @@ async function generateConversation(persona1, persona2) {
         persona2Name: persona2.name,
         persona1Role: persona1.role,
         persona2Role: persona2.role,
-        memoryContext
+        memoryContext: ''
       }),
       signal: controller.signal
     });
@@ -329,40 +347,57 @@ async function generateConversation(persona1, persona2) {
     
     if (response.ok) {
       const conversation = await response.json();
-      console.log(`✅ Got ${conversation.length} turns from API`);
-      
-      // Store in memory
-      try {
-        await fetch('/api/memory/conversations', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            pairKey,
-            participants: [persona1.id, persona2.id],
-            conversation
-          })
-        });
-      } catch (e) {
-        console.log('Failed to store memory');
+      if (conversation && conversation.length > 0) {
+        console.log(`✅ Got ${conversation.length} turns from API`);
+        return conversation;
       }
-      
-      return conversation;
-    } else {
-      const errText = await response.text();
-      console.error(`❌ API error: ${response.status} - ${errText}`);
     }
+    console.warn('API returned empty/bad response, using fallback');
   } catch (e) {
-    console.error('❌ Failed to generate conversation:', e.message);
+    console.warn('API failed, using fallback:', e.message);
   }
   
-  // Fallback - use immediately, don't wait
+  // Fallback conversations - immediate, no API needed
+  return getFallbackConversation(persona1, persona2);
+}
+
+// Pre-written fallback conversations for when API is unavailable
+function getFallbackConversation(persona1, persona2) {
   console.log('⚡ Using fallback conversation');
-  return [
-    { speaker: persona1.id, text: `Hello ${persona2.name}! Good to see you.` },
-    { speaker: persona2.id, text: `Likewise, ${persona1.name}. What's on your mind?` },
-    { speaker: persona1.id, text: `Just thinking about our work. So much to do.` },
-    { speaker: persona2.id, text: `Indeed. Let's catch up properly soon.` }
+  
+  // Pick random conversation style
+  const styles = [
+    // Quick greeting
+    [
+      { speaker: persona1.id, text: `${persona2.name}! Good to see you.` },
+      { speaker: persona2.id, text: `${persona1.name}, always a pleasure. How's the work going?` },
+      { speaker: persona1.id, text: `Making progress. We should compare notes sometime.` },
+      { speaker: persona2.id, text: `Absolutely. Let's talk soon.` }
+    ],
+    // Philosophical
+    [
+      { speaker: persona1.id, text: `I've been thinking about what really matters...` },
+      { speaker: persona2.id, text: `A question we all wrestle with. What's your conclusion?` },
+      { speaker: persona1.id, text: `That action beats contemplation. Every time.` },
+      { speaker: persona2.id, text: `Wisdom in motion. I like it.` }
+    ],
+    // Advice seeking
+    [
+      { speaker: persona2.id, text: `Hey ${persona1.name}, got a minute?` },
+      { speaker: persona1.id, text: `Of course. What's on your mind?` },
+      { speaker: persona2.id, text: `Just looking for a fresh perspective on something.` },
+      { speaker: persona1.id, text: `Walk with me. Two minds are better than one.` }
+    ],
+    // Brief acknowledgment
+    [
+      { speaker: persona1.id, text: `*nods* ${persona2.name}.` },
+      { speaker: persona2.id, text: `${persona1.name}. Busy day?` },
+      { speaker: persona1.id, text: `Always. You know how it is.` },
+      { speaker: persona2.id, text: `That I do. Carry on.` }
+    ]
   ];
+  
+  return styles[Math.floor(Math.random() * styles.length)];
 }
 
 // Post to Discord
