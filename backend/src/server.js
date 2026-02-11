@@ -1,10 +1,14 @@
 import { WebSocketServer } from 'ws';
 import http from 'http';
+import { PERSONA_CHANNELS, CASUAL_CONVERSATIONS_CHANNEL, queueDiscordMessage, getPendingMessages } from './discord-channels.js';
 
 const WS_PORT = process.env.WS_PORT || 3001;
 const OPENCLAW_URL = process.env.OPENCLAW_URL || 'http://localhost:4444';
 const OPENCLAW_TOKEN = process.env.OPENCLAW_TOKEN || '';
 const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL || '2000');
+
+// Conversation memory - stores past conversations between persona pairs
+const conversationMemory = new Map();
 
 // State cache
 let currentState = {
@@ -135,20 +139,22 @@ const httpServer = http.createServer(async (req, res) => {
     req.on('data', chunk => body += chunk);
     req.on('end', async () => {
       try {
-        const { persona1Id, persona2Id, persona1Name, persona2Name, persona1Role, persona2Role } = JSON.parse(body);
+        const { persona1Id, persona2Id, persona1Name, persona2Name, persona1Role, persona2Role, memoryContext } = JSON.parse(body);
         
         const apiKey = process.env.OPENROUTER_API_KEY;
         if (!apiKey) {
           throw new Error('OPENROUTER_API_KEY not configured');
         }
         
+        const memoryPrompt = memoryContext ? `\n${memoryContext}` : '';
+        
         const prompt = `You are generating a brief, natural conversation between two famous thinkers who cross paths.
 
 ${persona1Name} (${persona1Role}): ${PERSONA_PROMPTS[persona1Id] || 'A thoughtful advisor.'}
 
-${persona2Name} (${persona2Role}): ${PERSONA_PROMPTS[persona2Id] || 'A thoughtful advisor.'}
+${persona2Name} (${persona2Role}): ${PERSONA_PROMPTS[persona2Id] || 'A thoughtful advisor.'}${memoryPrompt}
 
-Generate a short 4-turn conversation where they greet each other, share one insight each, and part ways. Each turn should be 1-2 sentences. They should stay in character.
+Generate a short 4-turn conversation where they greet each other, share one insight each, and part ways. Each turn should be 1-2 sentences. They should stay in character. ${memoryContext ? 'Reference or build on their previous conversation.' : ''}
 
 Format as JSON array:
 [
@@ -206,24 +212,111 @@ Only output the JSON array, nothing else.`;
     return;
   }
   
-  // Discord posting API
+  // Discord posting API - Queue messages for gateway to post
   if (req.url === '/api/discord/post' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => body += chunk);
     req.on('end', async () => {
       try {
-        const { channelId, message } = JSON.parse(body);
+        const { channelId, message, personaId } = JSON.parse(body);
         
-        // Forward to OpenClaw gateway for Discord posting
-        // For now, just log it - actual integration would use OpenClaw's message tool
-        console.log(`[Discord Post] Channel: ${channelId}`);
-        console.log(`Message: ${message.substring(0, 200)}...`);
+        // Use persona channel if personaId provided
+        const targetChannel = personaId ? PERSONA_CHANNELS[personaId] : channelId;
         
-        // TODO: Integrate with OpenClaw message tool via WebSocket
+        queueDiscordMessage(targetChannel || CASUAL_CONVERSATIONS_CHANNEL, message, personaId);
+        
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, logged: true }));
+        res.end(JSON.stringify({ ok: true, queued: true }));
       } catch (e) {
         console.error('Discord post error:', e.message);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+  
+  // Get pending Discord messages (for gateway polling)
+  if (req.url === '/api/discord/pending' && req.method === 'GET') {
+    const messages = getPendingMessages();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(messages));
+    return;
+  }
+  
+  // Log user chat session to Discord
+  if (req.url === '/api/chat/log' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        const { personaId, personaName, messages } = JSON.parse(body);
+        
+        if (!messages || messages.length === 0) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, skipped: true }));
+          return;
+        }
+        
+        // Format chat log
+        const transcript = messages.map(m => {
+          const sender = m.role === 'user' ? '**You**' : `**${personaName}**`;
+          return `${sender}: ${m.content}`;
+        }).join('\n\n');
+        
+        const header = `💬 **Chat Session with ${personaName}** (${new Date().toLocaleString()})\n\n`;
+        const fullMessage = header + transcript;
+        
+        // Queue for persona's channel
+        const channelId = PERSONA_CHANNELS[personaId];
+        if (channelId) {
+          queueDiscordMessage(channelId, fullMessage, personaId);
+        }
+        
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (e) {
+        console.error('Chat log error:', e.message);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+  
+  // Conversation memory - store and retrieve past conversations
+  if (req.url === '/api/memory/conversations' && req.method === 'GET') {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const pairKey = url.searchParams.get('pair');
+    
+    const history = conversationMemory.get(pairKey) || [];
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(history));
+    return;
+  }
+  
+  if (req.url === '/api/memory/conversations' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        const { pairKey, conversation, participants } = JSON.parse(body);
+        
+        const history = conversationMemory.get(pairKey) || [];
+        history.push({
+          timestamp: Date.now(),
+          participants,
+          conversation: conversation.slice(0, 4) // Keep only first 4 turns for summary
+        });
+        
+        // Keep only last 5 conversations
+        while (history.length > 5) history.shift();
+        
+        conversationMemory.set(pairKey, history);
+        
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (e) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: e.message }));
       }

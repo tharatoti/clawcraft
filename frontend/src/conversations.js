@@ -160,8 +160,29 @@ export async function startConversation(unit1, unit2, uiCallback) {
   currentConversationGroup = [];
 }
 
-// Generate AI conversation between personas
+// Generate AI conversation between personas (with memory)
 async function generateConversation(persona1, persona2) {
+  const pairKey = getGroupKey([persona1.id, persona2.id]);
+  
+  // Get past conversation history
+  let memoryContext = '';
+  try {
+    const memRes = await fetch(`/api/memory/conversations?pair=${pairKey}`);
+    if (memRes.ok) {
+      const history = await memRes.json();
+      if (history.length > 0) {
+        const lastConvo = history[history.length - 1];
+        const summary = lastConvo.conversation.map(c => {
+          const name = c.speaker === persona1.id ? persona1.name : persona2.name;
+          return `${name}: "${c.text}"`;
+        }).join('\n');
+        memoryContext = `\n\nThey spoke recently about:\n${summary}\n\nContinue from where they left off or reference their previous conversation.`;
+      }
+    }
+  } catch (e) {
+    console.log('No memory available');
+  }
+  
   try {
     const response = await fetch('/api/conversation', {
       method: 'POST',
@@ -172,12 +193,30 @@ async function generateConversation(persona1, persona2) {
         persona1Name: persona1.name,
         persona2Name: persona2.name,
         persona1Role: persona1.role,
-        persona2Role: persona2.role
+        persona2Role: persona2.role,
+        memoryContext
       })
     });
     
     if (response.ok) {
-      return await response.json();
+      const conversation = await response.json();
+      
+      // Store this conversation in memory
+      try {
+        await fetch('/api/memory/conversations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            pairKey,
+            participants: [persona1.id, persona2.id],
+            conversation
+          })
+        });
+      } catch (e) {
+        console.log('Failed to store memory');
+      }
+      
+      return conversation;
     }
   } catch (e) {
     console.error('Failed to generate conversation:', e);

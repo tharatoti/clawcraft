@@ -107,8 +107,32 @@ export class PersonaChat {
     document.getElementById('persona-chat').classList.remove('hidden');
   }
   
-  closeChat() {
+  async closeChat() {
     document.getElementById('persona-chat').classList.add('hidden');
+    
+    // Log the chat session to Discord
+    if (this.activePersona) {
+      const messages = this.chatHistory.get(this.activePersona.id) || [];
+      if (messages.length > 0) {
+        try {
+          await fetch('/api/chat/log', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              personaId: this.activePersona.id,
+              personaName: this.activePersona.name,
+              messages: messages.map(m => ({
+                role: m.role,
+                content: m.content
+              }))
+            })
+          });
+          console.log(`Chat session logged for ${this.activePersona.name}`);
+        } catch (e) {
+          console.error('Failed to log chat session:', e);
+        }
+      }
+    }
     
     // Resume the avatar that was chatting
     if (window.currentChattingUnit) {
