@@ -392,24 +392,41 @@ Only output the JSON array, nothing else.`;
           const data = await response.json();
           const content = data.choices?.[0]?.message?.content?.trim() || '[]';
           
+          console.log('📝 Raw API response:', content.substring(0, 200));
+          
           // Parse the JSON conversation
           let conversation;
           try {
+            // Strip markdown code blocks if present
+            let cleanContent = content;
+            if (content.includes('```')) {
+              cleanContent = content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+            }
+            
             // Try to extract JSON from the response
-            const jsonMatch = content.match(/\[[\s\S]*\]/);
-            conversation = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+            const jsonMatch = cleanContent.match(/\[[\s\S]*\]/);
+            if (jsonMatch) {
+              conversation = JSON.parse(jsonMatch[0]);
+              console.log(`✅ Parsed ${conversation.length} conversation turns`);
+            } else {
+              console.error('❌ No JSON array found in response');
+              conversation = [];
+            }
           } catch (e) {
-            console.error('Failed to parse conversation JSON:', content);
+            console.error('❌ Failed to parse conversation JSON:', e.message);
+            console.error('Content was:', content.substring(0, 300));
             conversation = [];
           }
           
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(conversation));
         } else {
-          throw new Error('OpenRouter conversation error');
+          const errBody = await response.text();
+          console.error(`❌ OpenRouter error ${response.status}:`, errBody.substring(0, 200));
+          throw new Error(`OpenRouter ${response.status}`);
         }
       } catch (e) {
-        console.error('Conversation error:', e.message);
+        console.error('❌ Conversation error:', e.message);
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify([]));
       }
