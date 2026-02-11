@@ -2,6 +2,7 @@
 // Text and audio interaction with Mastermind personas
 
 import { getPersona } from './personas.js';
+import { getCurrentConversationMessages } from './conversations.js';
 
 export class PersonaChat {
   constructor() {
@@ -88,20 +89,43 @@ export class PersonaChat {
     }
   }
   
-  openChat(personaId) {
+  openChat(personaId, isJoining = false) {
     const persona = getPersona(personaId);
     if (!persona) return;
     
     this.activePersona = persona;
+    this.isJoining = isJoining;
     
     // Update UI
     document.getElementById('chat-avatar').style.backgroundColor = persona.color;
     document.getElementById('chat-persona-name').textContent = persona.name;
     document.getElementById('chat-persona-role').textContent = persona.role;
     
-    // Load chat history
-    const messages = this.chatHistory.get(personaId) || [];
-    this.renderMessages(messages);
+    // If joining an ongoing conversation, load that context
+    if (isJoining) {
+      const convMessages = getCurrentConversationMessages();
+      const messages = convMessages.map(m => ({
+        role: 'context',
+        content: m.text,
+        speaker: m.name,
+        color: m.color,
+        timestamp: m.time
+      }));
+      
+      // Add a system message about joining
+      messages.push({
+        role: 'system',
+        content: `You've joined the conversation with ${convMessages.map(m => m.name).filter((v, i, a) => a.indexOf(v) === i).join(', ')}. The conversation is shown above.`,
+        timestamp: Date.now()
+      });
+      
+      this.chatHistory.set(personaId, messages);
+      this.renderMessages(messages);
+    } else {
+      // Regular chat - load existing history
+      const messages = this.chatHistory.get(personaId) || [];
+      this.renderMessages(messages);
+    }
     
     // Show panel
     document.getElementById('persona-chat').classList.remove('hidden');
@@ -176,15 +200,34 @@ export class PersonaChat {
   
   renderMessages(messages) {
     const container = document.getElementById('chat-messages');
-    container.innerHTML = messages.map(msg => `
-      <div class="chat-message ${msg.role}">
-        <div class="message-content">${msg.content}</div>
-        ${msg.audioUrl ? `
-          <audio controls src="${msg.audioUrl}" class="message-audio"></audio>
-        ` : ''}
-        <div class="message-time">${new Date(msg.timestamp).toLocaleTimeString()}</div>
-      </div>
-    `).join('');
+    container.innerHTML = messages.map(msg => {
+      if (msg.role === 'context') {
+        // Prior conversation context - show with speaker name and styling
+        return `
+          <div class="chat-message context">
+            <div class="message-speaker" style="color: ${msg.color || '#ff9900'}">${msg.speaker || 'Unknown'}</div>
+            <div class="message-content">${msg.content}</div>
+            <div class="message-time">${new Date(msg.timestamp).toLocaleTimeString()}</div>
+          </div>
+        `;
+      } else if (msg.role === 'system') {
+        return `
+          <div class="chat-message system">
+            <div class="message-content">${msg.content}</div>
+          </div>
+        `;
+      } else {
+        return `
+          <div class="chat-message ${msg.role}">
+            <div class="message-content">${msg.content}</div>
+            ${msg.audioUrl ? `
+              <audio controls src="${msg.audioUrl}" class="message-audio"></audio>
+            ` : ''}
+            <div class="message-time">${new Date(msg.timestamp).toLocaleTimeString()}</div>
+          </div>
+        `;
+      }
+    }).join('');
     
     // Scroll to bottom
     container.scrollTop = container.scrollHeight;
@@ -355,7 +398,7 @@ export function initChat() {
     chatInstance.sendMessage(input.value);
   };
   window.playPersonaHello = () => chatInstance.playHello();
-  window.openPersonaChat = (id) => chatInstance.openChat(id);
+  window.openPersonaChat = (id, isJoining = false) => chatInstance.openChat(id, isJoining);
   
   // Join ongoing conversation
   window.joinConversationUI = (participants) => {

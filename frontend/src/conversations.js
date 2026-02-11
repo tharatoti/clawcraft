@@ -9,19 +9,26 @@ const DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/147096275413866907
 // Active conversations - maps persona id to conversation group
 const activeConversations = new Map();
 
-// Current conversation participants
+// Current conversation participants and messages
 let currentConversationGroup = [];
+let currentConversationMessages = []; // Store messages for join feature
 
 // Conversation cooldown per persona pair (ms)
 const CONVERSATION_COOLDOWN = 3 * 60 * 1000; // 3 minutes
 
+// Maximum time a conversation can last before force-ending (safety)
+const MAX_CONVERSATION_TIME = 60 * 1000; // 60 seconds
+
 // Last conversation time per pair
 const lastConversationTime = new Map();
+
+// Conversation start time for timeout
+let conversationStartTime = 0;
 
 // Speech bubbles to render
 export const speechBubbles = new Map();
 
-// Bubble hover state - keeps bubbles visible when mouse is over
+// Bubble hover state
 export let hoveredBubbleId = null;
 let hoverTimeout = null;
 
@@ -34,41 +41,71 @@ export function setHoveredBubble(id) {
   }
 }
 
-// Clear hover with 1-second delay
+// Clear hover with delay
 export function clearHoveredBubble() {
   hoverTimeout = setTimeout(() => {
     hoveredBubbleId = null;
   }, 1000);
 }
 
-// UI callback for showing conversation
-let onConversationUI = null;
-
-// Check if two personas are close enough to bump
+// Check if two personas are close enough
 export function checkProximity(unit1, unit2, threshold = 1) {
   const dx = unit1.gridX - unit2.gridX;
   const dy = unit1.gridY - unit2.gridY;
   return Math.sqrt(dx * dx + dy * dy) < threshold;
 }
 
-// Get a unique key for a persona group
+// Get unique key for persona group
 function getGroupKey(ids) {
   return [...ids].sort().join('-');
 }
 
-// Check if a conversation can happen
+// Check if conversation can happen
 function canConverse(ids) {
   const key = getGroupKey(ids);
   const lastTime = lastConversationTime.get(key) || 0;
   return Date.now() - lastTime > CONVERSATION_COOLDOWN;
 }
 
-// Allow a third persona to join an ongoing conversation
+// Get current conversation messages (for join feature)
+export function getCurrentConversationMessages() {
+  return [...currentConversationMessages];
+}
+
+// Get current conversation participants
+export function getCurrentConversationGroup() {
+  return [...currentConversationGroup];
+}
+
+// Force end any stuck conversation
+export function forceEndConversation() {
+  console.log('Force ending conversation');
+  for (const unit of currentConversationGroup) {
+    unit.status = 'idle';
+    activeConversations.delete(unit.id);
+    speechBubbles.delete(unit.id);
+  }
+  currentConversationGroup = [];
+  currentConversationMessages = [];
+  hideConversationLog();
+}
+
+// Check and cleanup stuck conversations (call from game loop)
+export function checkStuckConversations() {
+  if (currentConversationGroup.length > 0 && conversationStartTime > 0) {
+    if (Date.now() - conversationStartTime > MAX_CONVERSATION_TIME) {
+      console.warn('Conversation timed out, forcing end');
+      forceEndConversation();
+    }
+  }
+}
+
+// Allow a persona to join ongoing conversation
 export function joinConversation(unit, talkingUnits) {
   if (currentConversationGroup.length >= 4) return; // Max 4 participants
   if (currentConversationGroup.find(u => u.id === unit.id)) return; // Already in
   
-  // Check cooldown with all current participants
+  // Check cooldown
   const allIds = [...currentConversationGroup.map(u => u.id), unit.id];
   if (!canConverse(allIds)) return;
   
@@ -76,22 +113,26 @@ export function joinConversation(unit, talkingUnits) {
   unit.status = 'talking';
   currentConversationGroup.push(unit);
   
-  // Show a joining message
-  const persona = getPersona(unit.id);
+  // Show joining bubble
   speechBubbles.set(unit.id, {
     text: `*joins the conversation*`,
     color: unit.color,
     expires: Date.now() + 2000
   });
+  
+  // Add to conversation log
+  addToConversationLog(unit.id, '*joins the conversation*', unit.color, unit.name);
 }
 
-// Start a conversation between two personas
+// Start conversation between two personas
 export async function startConversation(unit1, unit2, uiCallback) {
   if (!canConverse([unit1.id, unit2.id])) return;
   if (activeConversations.has(unit1.id) || activeConversations.has(unit2.id)) return;
   
-  // Initialize conversation group
+  // Initialize
   currentConversationGroup = [unit1, unit2];
+  currentConversationMessages = [];
+  conversationStartTime = Date.now();
   
   // Mark as conversing
   activeConversations.set(unit1.id, true);
@@ -100,7 +141,7 @@ export async function startConversation(unit1, unit2, uiCallback) {
   const groupKey = getGroupKey([unit1.id, unit2.id]);
   lastConversationTime.set(groupKey, Date.now());
   
-  // Stop both personas from walking
+  // Stop walking
   unit1.status = 'talking';
   unit2.status = 'talking';
   
@@ -109,21 +150,44 @@ export async function startConversation(unit1, unit2, uiCallback) {
   
   console.log(`Conversation starting: ${persona1.name} and ${persona2.name}`);
   
+  // Show conversation log UI
+  showConversationLog([persona1, persona2]);
+  
   try {
     // Generate conversation
     const conversation = await generateConversation(persona1, persona2);
     
-    // Show UI overlay if callback provided
+    if (!conversation || conversation.length === 0) {
+      throw new Error('Empty conversation generated');
+    }
+    
+    // Show UI overlay if callback
     if (uiCallback) {
       uiCallback([persona1, persona2], conversation);
     }
     
-    // Display speech bubbles sequentially - longer duration for readability
+    // Display messages sequentially
     for (const turn of conversation) {
-      const speakerUnit = currentConversationGroup.find(u => u.id === turn.speaker) || unit1;
+      // Safety check - abort if conversation was force-ended
+      if (currentConversationGroup.length === 0) break;
       
-      // Calculate read time based on text length (avg 200 words/min = ~15 chars/sec)
-      const readTime = Math.max(4000, turn.text.length * 70);
+      const speakerUnit = currentConversationGroup.find(u => u.id === turn.speaker) || unit1;
+      const speakerPersona = getPersona(speakerUnit.id);
+      
+      // Store message
+      currentConversationMessages.push({
+        speaker: speakerUnit.id,
+        name: speakerPersona?.name || speakerUnit.name,
+        text: turn.text,
+        color: speakerUnit.color,
+        time: Date.now()
+      });
+      
+      // Add to conversation log
+      addToConversationLog(speakerUnit.id, turn.text, speakerUnit.color, speakerPersona?.name || speakerUnit.name);
+      
+      // Read time based on length
+      const readTime = Math.max(3000, Math.min(8000, turn.text.length * 60));
       
       // Show speech bubble
       speechBubbles.set(speakerUnit.id, {
@@ -133,14 +197,13 @@ export async function startConversation(unit1, unit2, uiCallback) {
         speakerId: speakerUnit.id
       });
       
-      // Wait for bubble duration
+      // Wait
       await new Promise(r => setTimeout(r, readTime));
       
-      // Only delete if not being hovered
       if (hoveredBubbleId !== speakerUnit.id) {
         speechBubbles.delete(speakerUnit.id);
       }
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise(r => setTimeout(r, 400));
     }
     
     // Post to Discord
@@ -151,20 +214,28 @@ export async function startConversation(unit1, unit2, uiCallback) {
     console.error('Conversation error:', e);
   }
   
-  // Resume walking for all participants
+  // End conversation - resume walking
   for (const unit of currentConversationGroup) {
     unit.status = 'idle';
     activeConversations.delete(unit.id);
   }
   
   currentConversationGroup = [];
+  conversationStartTime = 0;
+  
+  // Keep log visible for a bit, then fade
+  setTimeout(() => {
+    if (currentConversationGroup.length === 0) {
+      hideConversationLog();
+    }
+  }, 5000);
 }
 
-// Generate AI conversation between personas (with memory)
+// Generate AI conversation (with memory)
 async function generateConversation(persona1, persona2) {
   const pairKey = getGroupKey([persona1.id, persona2.id]);
   
-  // Get past conversation history
+  // Get past history
   let memoryContext = '';
   try {
     const memRes = await fetch(`/api/memory/conversations?pair=${pairKey}`);
@@ -176,7 +247,7 @@ async function generateConversation(persona1, persona2) {
           const name = c.speaker === persona1.id ? persona1.name : persona2.name;
           return `${name}: "${c.text}"`;
         }).join('\n');
-        memoryContext = `\n\nThey spoke recently about:\n${summary}\n\nContinue from where they left off or reference their previous conversation.`;
+        memoryContext = `\n\nThey spoke recently:\n${summary}\n\nReference or continue from their previous conversation.`;
       }
     }
   } catch (e) {
@@ -184,6 +255,9 @@ async function generateConversation(persona1, persona2) {
   }
   
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+    
     const response = await fetch('/api/conversation', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -195,13 +269,16 @@ async function generateConversation(persona1, persona2) {
         persona1Role: persona1.role,
         persona2Role: persona2.role,
         memoryContext
-      })
+      }),
+      signal: controller.signal
     });
+    
+    clearTimeout(timeout);
     
     if (response.ok) {
       const conversation = await response.json();
       
-      // Store this conversation in memory
+      // Store in memory
       try {
         await fetch('/api/memory/conversations', {
           method: 'POST',
@@ -222,16 +299,16 @@ async function generateConversation(persona1, persona2) {
     console.error('Failed to generate conversation:', e);
   }
   
-  // Fallback: simple generic exchange
+  // Fallback
   return [
-    { speaker: persona1.id, text: `Hello ${persona2.name}! Interesting running into you here.` },
-    { speaker: persona2.id, text: `Indeed, ${persona1.name}. Always good to exchange ideas.` },
-    { speaker: persona1.id, text: `Perhaps we should discuss our approaches sometime.` },
-    { speaker: persona2.id, text: `I'd like that. Until next time.` }
+    { speaker: persona1.id, text: `Hello ${persona2.name}! Good to see you.` },
+    { speaker: persona2.id, text: `Likewise, ${persona1.name}. What's on your mind?` },
+    { speaker: persona1.id, text: `Just thinking about our work. So much to do.` },
+    { speaker: persona2.id, text: `Indeed. Let's catch up properly soon.` }
   ];
 }
 
-// Post conversation transcript to Discord via webhook
+// Post to Discord
 async function postToDiscord(personas, conversation) {
   const personaMap = new Map(personas.map(p => [p.id, p]));
   
@@ -253,11 +330,137 @@ async function postToDiscord(personas, conversation) {
         avatar_url: 'https://raw.githubusercontent.com/tharatoti/clawcraft/main/frontend/public/favicon.png'
       })
     });
-    console.log('Posted conversation to Discord');
   } catch (e) {
     console.error('Failed to post to Discord:', e);
   }
 }
+
+// ========== Conversation Log UI ==========
+
+// Show conversation log in corner
+function showConversationLog(personas) {
+  let log = document.getElementById('conversation-log');
+  if (!log) {
+    log = document.createElement('div');
+    log.id = 'conversation-log';
+    log.className = 'conversation-log';
+    document.body.appendChild(log);
+  }
+  
+  const names = personas.map(p => `<span style="color:${p.color || '#fff'}">${p.name}</span>`).join(' & ');
+  
+  log.innerHTML = `
+    <div class="conv-log-header">
+      <span>💬 ${names}</span>
+      <button class="conv-log-close" onclick="window.closeConversationLog()">×</button>
+    </div>
+    <div class="conv-log-messages" id="conv-log-messages"></div>
+  `;
+  
+  log.classList.remove('hidden');
+  log.classList.add('visible');
+}
+
+// Add message to log
+function addToConversationLog(speakerId, text, color, name) {
+  const container = document.getElementById('conv-log-messages');
+  if (!container) return;
+  
+  const msg = document.createElement('div');
+  msg.className = 'conv-log-msg';
+  msg.innerHTML = `<span class="conv-log-name" style="color:${color}">${name}:</span> ${text}`;
+  container.appendChild(msg);
+  
+  // Scroll to bottom
+  container.scrollTop = container.scrollHeight;
+  
+  // Animate in
+  msg.style.opacity = '0';
+  msg.style.transform = 'translateX(-10px)';
+  requestAnimationFrame(() => {
+    msg.style.transition = 'all 0.3s ease';
+    msg.style.opacity = '1';
+    msg.style.transform = 'translateX(0)';
+  });
+}
+
+// Hide conversation log
+function hideConversationLog() {
+  const log = document.getElementById('conversation-log');
+  if (log) {
+    log.classList.remove('visible');
+    log.classList.add('hidden');
+  }
+}
+
+// Global close function
+window.closeConversationLog = function() {
+  hideConversationLog();
+};
+
+// ========== Join Conversation UI ==========
+
+// Show join dialog with conversation history
+window.showJoinConversationDialog = function(participants) {
+  const messages = getCurrentConversationMessages();
+  
+  let dialog = document.getElementById('join-conversation-dialog');
+  if (!dialog) {
+    dialog = document.createElement('div');
+    dialog.id = 'join-conversation-dialog';
+    dialog.className = 'join-conversation-dialog';
+    document.body.appendChild(dialog);
+  }
+  
+  const names = participants.map(p => 
+    `<span style="color:${p.color || '#ff9900'}">${p.name}</span>`
+  ).join(' & ');
+  
+  // Show last few messages
+  const recentMessages = messages.slice(-6);
+  const historyHtml = recentMessages.length > 0 
+    ? recentMessages.map(m => 
+        `<div class="join-msg"><span style="color:${m.color}">${m.name}:</span> ${m.text}</div>`
+      ).join('')
+    : '<div class="join-msg">*The conversation just started...*</div>';
+  
+  dialog.innerHTML = `
+    <div class="join-dialog-content">
+      <div class="join-dialog-header">
+        <span>🗣️ Ongoing Conversation</span>
+        <button class="join-dialog-close" onclick="window.closeJoinDialog()">×</button>
+      </div>
+      <div class="join-dialog-participants">${names} are talking.</div>
+      <div class="join-dialog-history">
+        <div class="join-history-label">Recent:</div>
+        ${historyHtml}
+      </div>
+      <div class="join-dialog-actions">
+        <button class="join-btn primary" onclick="window.doJoinConversation()">Join Conversation</button>
+        <button class="join-btn" onclick="window.closeJoinDialog()">Just Watch</button>
+      </div>
+    </div>
+  `;
+  
+  dialog.classList.remove('hidden');
+  dialog.classList.add('visible');
+};
+
+window.closeJoinDialog = function() {
+  const dialog = document.getElementById('join-conversation-dialog');
+  if (dialog) {
+    dialog.classList.remove('visible');
+    dialog.classList.add('hidden');
+  }
+};
+
+window.doJoinConversation = function() {
+  window.closeJoinDialog();
+  // The actual join is handled by chat.js openPersonaChat
+  if (window.onJoinConversation) {
+    window.onJoinConversation();
+  }
+};
 
 // Render speech bubble
 export function renderSpeechBubble(ctx, x, y, text, color) {
@@ -290,7 +493,7 @@ export function renderSpeechBubble(ctx, x, y, text, color) {
   const bubbleX = x - bubbleWidth / 2;
   const bubbleY = y - bubbleHeight - 20;
   
-  // Bubble background
+  // Background
   ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
   ctx.strokeStyle = color;
   ctx.lineWidth = 2;
@@ -333,15 +536,16 @@ export function renderSpeechBubble(ctx, x, y, text, color) {
   });
 }
 
-// Clean up expired speech bubbles (respects hover state)
+// Cleanup expired bubbles
 export function cleanupBubbles() {
   const now = Date.now();
   for (const [id, bubble] of speechBubbles) {
-    // Don't delete if being hovered
     if (hoveredBubbleId === id) continue;
-    
     if (now > bubble.expires) {
       speechBubbles.delete(id);
     }
   }
+  
+  // Also check for stuck conversations
+  checkStuckConversations();
 }

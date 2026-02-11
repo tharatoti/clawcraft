@@ -753,7 +753,7 @@ class World {
         if (dist < 30) {
           clicked = { type: 'unit', data: unit };
           
-          // If persona is in a conversation, open group chat UI
+          // If persona is in a conversation, show join dialog with history
           if (unit.status === 'talking') {
             // Find all talking personas nearby
             const talkingNearby = [...this.units.values()].filter(u => 
@@ -761,25 +761,36 @@ class World {
               Math.sqrt((u.gridX - unit.gridX) ** 2 + (u.gridY - unit.gridY) ** 2) < 5
             );
             
-            if (talkingNearby.length > 0 && window.joinConversationUI) {
-              window.joinConversationUI(talkingNearby.map(u => ({
+            if (talkingNearby.length > 0 && window.showJoinConversationDialog) {
+              const participants = talkingNearby.map(u => ({
                 id: u.id,
                 name: u.name,
                 color: u.color
-              })));
+              }));
+              
+              // Store ref for join action
+              window.pendingJoinPersonas = participants;
+              window.pendingJoinUnit = unit;
+              
+              // Callback when user clicks "Join"
+              window.onJoinConversation = () => {
+                if (window.openPersonaChat && window.pendingJoinUnit) {
+                  window.pendingJoinUnit.status = 'chatting';
+                  window.currentChattingUnit = window.pendingJoinUnit;
+                  window.openPersonaChat(window.pendingJoinUnit.id, true); // true = isJoining
+                }
+              };
+              
+              window.showJoinConversationDialog(participants);
             }
           }
-          // If persona is clickable and not talking, open 1:1 chat
-          else if (unit.data.clickable && window.openPersonaChat) {
-            // Pause the avatar while chatting
+          // If persona is idle and clickable, open 1:1 chat
+          else if (unit.data.clickable && unit.status !== 'chatting' && window.openPersonaChat) {
             unit.status = 'chatting';
             unit.targetX = unit.gridX;
             unit.targetY = unit.gridY;
-            
-            // Store reference to resume when chat closes
             window.currentChattingUnit = unit;
-            
-            window.openPersonaChat(unit.id);
+            window.openPersonaChat(unit.id, false);
           }
         }
       }

@@ -775,3 +775,235 @@ body {
 .join-modal-buttons button:last-child:hover {
   background: rgba(204, 153, 204, 0.2);
 }
+
+/* ========== Conversation Log (corner UI) ========== */
+.conversation-log {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  width: 350px;
+  max-height: 300px;
+  background: rgba(0, 0, 0, 0.9);
+  border: 2px solid var(--lcars-orange);
+  border-radius: 10px;
+  z-index: 500;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.3s ease;
+}
+
+.conversation-log.hidden {
+  opacity: 0;
+  transform: translateY(20px);
+  pointer-events: none;
+}
+
+.conversation-log.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.conv-log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 15px;
+  background: var(--lcars-orange);
+  color: #000;
+  font-weight: bold;
+  border-radius: 8px 8px 0 0;
+}
+
+.conv-log-close {
+  background: none;
+  border: none;
+  color: #000;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0 5px;
+}
+
+.conv-log-close:hover {
+  color: #ff0000;
+}
+
+.conv-log-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+  max-height: 230px;
+}
+
+.conv-log-msg {
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 153, 0, 0.1);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.conv-log-name {
+  font-weight: bold;
+  margin-right: 5px;
+}
+
+/* ========== Join Conversation Dialog (with history) ========== */
+.join-conversation-dialog {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  pointer-events: auto;
+  transition: opacity 0.3s ease;
+}
+
+.join-conversation-dialog.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.join-conversation-dialog.visible {
+  opacity: 1;
+}
+
+.join-dialog-content {
+  background: rgba(10, 10, 30, 0.98);
+  border: 2px solid var(--lcars-orange);
+  border-radius: 15px;
+  padding: 0;
+  min-width: 400px;
+  max-width: 500px;
+  overflow: hidden;
+  animation: dialogSlideIn 0.3s ease;
+}
+
+@keyframes dialogSlideIn {
+  from { transform: translateY(-20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.join-dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 20px;
+  background: var(--lcars-orange);
+  color: #000;
+  font-weight: bold;
+  font-size: 16px;
+}
+
+.join-dialog-close {
+  background: none;
+  border: none;
+  color: #000;
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.join-dialog-participants {
+  padding: 15px 20px;
+  color: #ccc;
+  font-size: 14px;
+  border-bottom: 1px solid rgba(255, 153, 0, 0.3);
+}
+
+.join-dialog-history {
+  padding: 15px 20px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.join-history-label {
+  color: var(--lcars-purple);
+  font-size: 12px;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+}
+
+.join-msg {
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  background: rgba(100, 100, 150, 0.15);
+  border-radius: 8px;
+  font-size: 13px;
+  color: #eee;
+  border-left: 3px solid var(--lcars-blue);
+}
+
+.join-dialog-actions {
+  display: flex;
+  gap: 10px;
+  padding: 15px 20px;
+  justify-content: flex-end;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.join-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: all 0.2s;
+  font-size: 14px;
+}
+
+.join-btn.primary {
+  background: var(--lcars-orange);
+  color: #000;
+}
+
+.join-btn.primary:hover {
+  background: #ffaa33;
+}
+
+.join-btn:not(.primary) {
+  background: transparent;
+  border: 1px solid var(--lcars-purple);
+  color: var(--lcars-purple);
+}
+
+.join-btn:not(.primary):hover {
+  background: rgba(204, 153, 204, 0.2);
+}
+
+/* ========== Chat Message Styles ========== */
+.chat-message.context {
+  background: rgba(100, 100, 150, 0.15);
+  border-left: 3px solid var(--lcars-blue);
+  padding: 8px 12px;
+  margin: 5px 0;
+  border-radius: 0 8px 8px 0;
+}
+
+.chat-message.context .message-speaker {
+  font-weight: bold;
+  font-size: 11px;
+  margin-bottom: 3px;
+}
+
+.chat-message.context .message-content {
+  font-size: 13px;
+  color: #ddd;
+}
+
+.chat-message.system {
+  background: rgba(255, 153, 0, 0.15);
+  border: 1px dashed var(--lcars-orange);
+  padding: 10px;
+  margin: 10px 0;
+  border-radius: 8px;
+  text-align: center;
+  font-style: italic;
+  color: var(--lcars-orange);
+  font-size: 12px;
+}
