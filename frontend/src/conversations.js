@@ -21,10 +21,10 @@ let conversationHasStarted = false; // True once first message shown
 const CONVERSATION_COOLDOWN = 2 * 60 * 1000; // 2 minutes
 
 // Maximum time waiting for API before using fallback
-const API_TIMEOUT = 10 * 1000; // 10 seconds
+const API_TIMEOUT = 8 * 1000; // 8 seconds
 
 // Maximum time for awkward silence before giving up
-const AWKWARD_SILENCE_TIMEOUT = 15 * 1000; // 15 seconds with no dialog = move on
+const AWKWARD_SILENCE_TIMEOUT = 10 * 1000; // 10 seconds with no dialog = move on
 
 // Maximum time a conversation can last
 const MAX_CONVERSATION_TIME = 60 * 1000; // 60 seconds total
@@ -368,30 +368,29 @@ async function generateConversation(persona1, persona2) {
       if (conversation && conversation.length > 0) {
         console.log(`✅ Got ${conversation.length} turns from API`);
         
-        // Store this conversation for future memory
-        try {
-          await fetch('/api/memory/conversations', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              pairKey,
-              participants: [persona1.id, persona2.id],
-              conversation
-            })
-          });
-        } catch (e) {
-          // Memory store failed, continue anyway
-        }
+        // Store this conversation for future memory (async, don't wait)
+        fetch('/api/memory/conversations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            pairKey,
+            participants: [persona1.id, persona2.id],
+            conversation
+          })
+        }).catch(() => {});
         
         return conversation;
       }
+      console.warn('API returned empty response, using fallback');
+    } else {
+      console.warn(`API error ${response.status}, using fallback`);
     }
-    console.warn('API returned empty/bad response, using fallback');
   } catch (e) {
     console.warn('API failed, using fallback:', e.message);
   }
   
   // Fallback conversations - immediate, no API needed
+  console.log('⚡ Using local fallback conversation');
   return getFallbackConversation(persona1, persona2);
 }
 

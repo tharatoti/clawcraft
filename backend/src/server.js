@@ -371,51 +371,126 @@ Format as JSON array:
 
 Only output the JSON array, nothing else.`;
 
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-            'HTTP-Referer': 'https://clawcraft.local',
-            'X-Title': 'ClawCraft'
-          },
-          body: JSON.stringify({
-            model: 'google/gemma-3-12b-it:free',
-            messages: [{ role: 'user', content: prompt }],
-            max_tokens: 400,
-            temperature: 0.9
-          }),
-          signal: AbortSignal.timeout(45000)
-        });
+        // Try multiple free models with fallback
+        const freeModels = [
+          'google/gemma-3-12b-it:free',
+          'google/gemma-3-4b-it:free',
+          'meta-llama/llama-3.2-3b-instruct:free',
+          'mistralai/mistral-7b-instruct:free'
+        ];
+        
+        let response = null;
+        let lastError = null;
+        
+        for (const model of freeModels) {
+          try {
+            console.log(`🔄 Trying model: ${model}`);
+            response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+              method: 'POST',
+              headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`,
+                'HTTP-Referer': 'https://clawcraft.local',
+                'X-Title': 'ClawCraft'
+              },
+              body: JSON.stringify({
+                model: model,
+                messages: [{ role: 'user', content: prompt }],
+                max_tokens: 800,
+                temperature: 0.9
+              }),
+              signal: AbortSignal.timeout(20000)
+            });
+            
+            if (response.ok) {
+              console.log(`✅ Success with ${model}`);
+              break;
+            } else if (response.status === 429) {
+              console.log(`⚠️ Rate limited on ${model}, trying next...`);
+              lastError = 'Rate limited';
+              continue;
+            } else {
+              lastError = `${response.status}`;
+              break;
+            }
+          } catch (e) {
+            lastError = e.message;
+            console.log(`⚠️ ${model} failed: ${e.message}`);
+            continue;
+          }
+        }
+        
+        if (!response || !response.ok) {
+          throw new Error(lastError || 'All models failed');
+        }
         
         if (response.ok) {
           const data = await response.json();
           const content = data.choices?.[0]?.message?.content?.trim() || '[]';
           
-          console.log('📝 Raw API response:', content.substring(0, 200));
+          console.log('📝 Raw API response length:', content.length);
           
           // Parse the JSON conversation
-          let conversation;
+          let conversation = [];
           try {
             // Strip markdown code blocks if present
-            let cleanContent = content;
-            if (content.includes('```')) {
-              cleanContent = content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+            let cleanContent = content
+              .replace(/```json\s*/gi, '')
+              .replace(/```\s*/g, '')
+              .trim();
+            
+            // Find the start of the JSON array
+            const startIdx = cleanContent.indexOf('[');
+            if (startIdx === -1) {
+              throw new Error('No JSON array found');
             }
             
-            // Try to extract JSON from the response
-            const jsonMatch = cleanContent.match(/\[[\s\S]*\]/);
-            if (jsonMatch) {
-              conversation = JSON.parse(jsonMatch[0]);
-              console.log(`✅ Parsed ${conversation.length} conversation turns`);
-            } else {
-              console.error('❌ No JSON array found in response');
-              conversation = [];
+            // Find matching closing bracket
+            let depth = 0;
+            let endIdx = -1;
+            for (let i = startIdx; i < cleanContent.length; i++) {
+              if (cleanContent[i] === '[') depth++;
+              if (cleanContent[i] === ']') depth--;
+              if (depth === 0) {
+                endIdx = i;
+                break;
+              }
             }
+            
+            let jsonStr;
+            if (endIdx === -1) {
+              // JSON was truncated - try to repair it
+              console.log('⚠️ JSON truncated, attempting repair...');
+              jsonStr = cleanContent.substring(startIdx);
+              
+              // Count unclosed brackets and braces
+              let brackets = 0, braces = 0;
+              for (const c of jsonStr) {
+                if (c === '[') brackets++;
+                if (c === ']') brackets--;
+                if (c === '{') braces++;
+                if (c === '}') braces--;
+              }
+              
+              // Close unclosed braces first, then brackets
+              // If we're mid-string, close the string too
+              if (jsonStr.match(/"[^"]*$/)) {
+                jsonStr += '"';  // Close unclosed string
+              }
+              while (braces > 0) { jsonStr += '}'; braces--; }
+              while (brackets > 0) { jsonStr += ']'; brackets--; }
+              
+              console.log('📝 Repaired JSON ends with:', jsonStr.slice(-50));
+            } else {
+              jsonStr = cleanContent.substring(startIdx, endIdx + 1);
+            }
+            
+            conversation = JSON.parse(jsonStr);
+            console.log(`✅ Parsed ${conversation.length} conversation turns`);
+            
           } catch (e) {
-            console.error('❌ Failed to parse conversation JSON:', e.message);
-            console.error('Content was:', content.substring(0, 300));
-            conversation = [];
+            console.error('❌ Failed to parse conversation:', e.message);
+            console.error('First 400 chars:', content.substring(0, 400));
           }
           
           res.writeHead(200, { 'Content-Type': 'application/json' });
