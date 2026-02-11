@@ -1,6 +1,8 @@
 // ClawCraft 2D Isometric Engine v2
 // Expanded with pipelines, services, animated units, and theme support
 
+import { speechBubbles, checkProximity, startConversation, renderSpeechBubble, cleanupBubbles } from './conversations.js';
+
 // Theme definitions
 const THEMES = {
   'orange-scifi': {
@@ -698,11 +700,18 @@ class World {
   
   update(dt) {
     // Update animated units
-    for (const unit of this.units.values()) {
+    const unitArray = [...this.units.values()];
+    for (const unit of unitArray) {
       unit.update(dt);
-      // Make personas wander around boardroom
-      unit.wander(15, 30, 4);
+      // Make personas wander around larger area
+      unit.wander(5, 35, 12); // Expanded wandering area
     }
+    
+    // Check for persona collisions/conversations
+    this.checkPersonaCollisions(unitArray);
+    
+    // Cleanup expired speech bubbles
+    cleanupBubbles();
     
     // Animate pipeline flow
     for (const pipeline of this.pipelines) {
@@ -1319,6 +1328,29 @@ class World {
     }
   }
   
+  // Check if any personas are close enough to have a conversation
+  checkPersonaCollisions(units) {
+    // Only check occasionally to reduce overhead
+    if (Math.random() > 0.01) return; // ~1% chance per frame
+    
+    for (let i = 0; i < units.length; i++) {
+      for (let j = i + 1; j < units.length; j++) {
+        const unit1 = units[i];
+        const unit2 = units[j];
+        
+        // Skip if either is already talking
+        if (unit1.status === 'talking' || unit2.status === 'talking') continue;
+        
+        // Check proximity
+        if (checkProximity(unit1, unit2, 2.5)) {
+          // Start a conversation (async, handles cooldowns internally)
+          startConversation(unit1, unit2);
+          return; // Only one conversation at a time
+        }
+      }
+    }
+  }
+  
   renderUnit(unit) {
     const { ctx } = this;
     const colors = this.theme.colors;
@@ -1333,11 +1365,18 @@ class World {
     ctx.ellipse(pos.x, pos.y + 5, 15, 8, 0, 0, Math.PI * 2);
     ctx.fill();
     
-    // Body
+    // Body - pulsing effect when talking
+    const isTalking = unit.status === 'talking';
+    if (isTalking) {
+      ctx.shadowColor = unit.color;
+      ctx.shadowBlur = 10 + Math.sin(Date.now() * 0.01) * 5;
+    }
+    
     ctx.fillStyle = unit.color;
     ctx.beginPath();
     ctx.arc(pos.x, pos.y - 15 + bobY, 12, 0, Math.PI * 2);
     ctx.fill();
+    ctx.shadowBlur = 0;
     
     // Head
     ctx.fillStyle = '#ffcc99';
@@ -1365,6 +1404,12 @@ class World {
     ctx.font = 'bold 9px Arial';
     ctx.textAlign = 'center';
     ctx.fillText(unit.name, pos.x, pos.y - 40 + bobY);
+    
+    // Speech bubble if talking
+    const bubble = speechBubbles.get(unit.id);
+    if (bubble) {
+      renderSpeechBubble(ctx, pos.x, pos.y - 60 + bobY, bubble.text, bubble.color);
+    }
   }
   
   renderMinimap() {

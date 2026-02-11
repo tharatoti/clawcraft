@@ -110,6 +110,40 @@ export const PERSONAS = [
     role: 'Systems & Persuasion',
     voiceId: 'EXAVITQu4vr4xnSDxMaL',
     greeting: "Goals are for losers. Systems are for winners. Let me show you why."
+  },
+  
+  // New Additions
+  {
+    id: 'munger',
+    name: 'Charlie Munger',
+    color: '#8b4513',
+    role: 'Mental Models',
+    voiceId: 'pNInz6obpgDQGcFmaJgB',
+    greeting: "Invert, always invert. Tell me what would guarantee failure, and we'll avoid that."
+  },
+  {
+    id: 'aurelius',
+    name: 'Marcus Aurelius',
+    color: '#4a4a4a',
+    role: 'Stoic Philosophy',
+    voiceId: 'VR6AewLTigWG4xSOukaG',
+    greeting: "You have power over your mind—not outside events. Realize this, and you will find strength."
+  },
+  {
+    id: 'feynman',
+    name: 'Richard Feynman',
+    color: '#00aaff',
+    role: 'First Principles',
+    voiceId: 'EXAVITQu4vr4xnSDxMaL',
+    greeting: "See, the thing is... if you can't explain it simply, you don't understand it well enough!"
+  },
+  {
+    id: 'dalio',
+    name: 'Ray Dalio',
+    color: '#336699',
+    role: 'Principles & Systems',
+    voiceId: 'pNInz6obpgDQGcFmaJgB',
+    greeting: "Pain plus reflection equals progress. Let's diagnose what's really happening here."
   }
 ];
 

@@ -46,7 +46,11 @@ const PERSONA_PROMPTS = {
   franklin: "You are Benjamin Franklin. Respond as him - wise, witty, practical, focused on virtue and self-improvement.",
   lewis: "You are C.S. Lewis. Respond as him - thoughtful, philosophical, drawing on faith and reason, clear prose.",
   mises: "You are Ludwig von Mises. Respond as him - Austrian economist, focused on free markets, human action, and praxeology.",
-  adams: "You are Scott Adams. Respond as him - systems thinker, persuasion expert, Dilbert creator, contrarian takes."
+  adams: "You are Scott Adams. Respond as him - systems thinker, persuasion expert, Dilbert creator, contrarian takes.",
+  munger: "You are Charlie Munger. Respond as him - curmudgeonly wit, mental models, 'invert always invert', references to stupidity and incentives.",
+  aurelius: "You are Marcus Aurelius. Respond as him - Stoic philosopher, speak in contemplative second-person, reference the dichotomy of control, impermanence, and virtue.",
+  feynman: "You are Richard Feynman. Respond as him - playful curiosity, Brooklyn accent feel, 'See the thing is...', explain complex things simply, love of discovery.",
+  dalio: "You are Ray Dalio. Respond as him - systematic thinker, 'pain plus reflection equals progress', radical transparency, principles-based, calm and measured."
 };
 
 // HTTP server for health checks and chat API
@@ -118,6 +122,108 @@ const httpServer = http.createServer(async (req, res) => {
         }
       } catch (e) {
         console.error('Chat error:', e.message);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+  
+  // Conversation API - generate dialogue between two personas
+  if (req.url === '/api/conversation' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        const { persona1Id, persona2Id, persona1Name, persona2Name, persona1Role, persona2Role } = JSON.parse(body);
+        
+        const apiKey = process.env.OPENROUTER_API_KEY;
+        if (!apiKey) {
+          throw new Error('OPENROUTER_API_KEY not configured');
+        }
+        
+        const prompt = `You are generating a brief, natural conversation between two famous thinkers who cross paths.
+
+${persona1Name} (${persona1Role}): ${PERSONA_PROMPTS[persona1Id] || 'A thoughtful advisor.'}
+
+${persona2Name} (${persona2Role}): ${PERSONA_PROMPTS[persona2Id] || 'A thoughtful advisor.'}
+
+Generate a short 4-turn conversation where they greet each other, share one insight each, and part ways. Each turn should be 1-2 sentences. They should stay in character.
+
+Format as JSON array:
+[
+  {"speaker": "${persona1Id}", "text": "..."},
+  {"speaker": "${persona2Id}", "text": "..."},
+  {"speaker": "${persona1Id}", "text": "..."},
+  {"speaker": "${persona2Id}", "text": "..."}
+]
+
+Only output the JSON array, nothing else.`;
+
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+            'HTTP-Referer': 'https://clawcraft.local',
+            'X-Title': 'ClawCraft'
+          },
+          body: JSON.stringify({
+            model: 'google/gemma-3-12b-it:free',
+            messages: [{ role: 'user', content: prompt }],
+            max_tokens: 400,
+            temperature: 0.9
+          }),
+          signal: AbortSignal.timeout(45000)
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const content = data.choices?.[0]?.message?.content?.trim() || '[]';
+          
+          // Parse the JSON conversation
+          let conversation;
+          try {
+            // Try to extract JSON from the response
+            const jsonMatch = content.match(/\[[\s\S]*\]/);
+            conversation = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+          } catch (e) {
+            console.error('Failed to parse conversation JSON:', content);
+            conversation = [];
+          }
+          
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(conversation));
+        } else {
+          throw new Error('OpenRouter conversation error');
+        }
+      } catch (e) {
+        console.error('Conversation error:', e.message);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify([]));
+      }
+    });
+    return;
+  }
+  
+  // Discord posting API
+  if (req.url === '/api/discord/post' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        const { channelId, message } = JSON.parse(body);
+        
+        // Forward to OpenClaw gateway for Discord posting
+        // For now, just log it - actual integration would use OpenClaw's message tool
+        console.log(`[Discord Post] Channel: ${channelId}`);
+        console.log(`Message: ${message.substring(0, 200)}...`);
+        
+        // TODO: Integrate with OpenClaw message tool via WebSocket
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, logged: true }));
+      } catch (e) {
+        console.error('Discord post error:', e.message);
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: e.message }));
       }
