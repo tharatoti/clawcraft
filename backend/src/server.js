@@ -112,6 +112,107 @@ let currentState = {
   lastUpdate: Date.now()
 };
 
+// Persona dynamic state - goals, challenges, insights (evolves over time)
+const personaStates = new Map();
+
+// Initialize persona states with starting goals/challenges/insights
+function initializePersonaStates() {
+  const initialStates = {
+    hormozi: {
+      goal: "Figure out how to make offers so good people feel stupid saying no",
+      challenge: "Scaling without losing quality",
+      insight: "The bottleneck is always the owner's time"
+    },
+    robbins: {
+      goal: "Help more people break through their limiting beliefs",
+      challenge: "Reaching people before they hit rock bottom",
+      insight: "State change precedes behavior change"
+    },
+    kennedy: {
+      goal: "Teach direct response marketing to the next generation",
+      challenge: "Fighting the 'brand awareness' nonsense",
+      insight: "If you can't measure it, don't do it"
+    },
+    abraham: {
+      goal: "Find hidden assets in overlooked businesses",
+      challenge: "Getting business owners to see their untapped potential",
+      insight: "Strategy of preeminence - always give more than expected"
+    },
+    halbert: {
+      goal: "Write copy that makes people pull out their wallets",
+      challenge: "Fighting lazy thinking in marketing",
+      insight: "A starving crowd beats clever copy every time"
+    },
+    goggins: {
+      goal: "Push past the 40% barrier every single day",
+      challenge: "Staying hard when the world wants you soft",
+      insight: "Suffering is the currency of growth"
+    },
+    rosenberg: {
+      goal: "Spread nonviolent communication to conflict zones",
+      challenge: "Getting people to see needs behind behaviors",
+      insight: "Every criticism is a tragic expression of an unmet need"
+    },
+    naval: {
+      goal: "Build wealth through leverage and specific knowledge",
+      challenge: "Teaching patience in an impatient world",
+      insight: "Desire is a contract you make with yourself to be unhappy"
+    },
+    franklin: {
+      goal: "Perfect the art of self-improvement through virtue",
+      challenge: "Balancing industry with leisure",
+      insight: "An investment in knowledge pays the best interest"
+    },
+    lewis: {
+      goal: "Make the case for faith through reason and imagination",
+      challenge: "Speaking to a skeptical modern audience",
+      insight: "You don't have a soul. You are a soul. You have a body."
+    },
+    musk: {
+      goal: "Make humanity multi-planetary before it's too late",
+      challenge: "Manufacturing at scale is incredibly hard",
+      insight: "The first step is to establish that something is possible"
+    },
+    mises: {
+      goal: "Defend free markets against central planning",
+      challenge: "Economics is counterintuitive to most people",
+      insight: "Human action is purposeful behavior"
+    },
+    adams: {
+      goal: "Master the systems that create success",
+      challenge: "People prefer goals over systems",
+      insight: "Losers have goals. Winners have systems."
+    },
+    munger: {
+      goal: "Avoid stupidity rather than seek brilliance",
+      challenge: "Fighting the institutional imperative",
+      insight: "Invert, always invert - think about what to avoid"
+    },
+    aurelius: {
+      goal: "Practice virtue regardless of circumstances",
+      challenge: "Maintaining equanimity amidst chaos",
+      insight: "You have power over your mind, not outside events"
+    },
+    feynman: {
+      goal: "Understand nature through playful curiosity",
+      challenge: "Fighting cargo cult science",
+      insight: "The first principle is that you must not fool yourself"
+    },
+    dalio: {
+      goal: "Build an idea meritocracy based on radical transparency",
+      challenge: "Getting people to embrace painful feedback",
+      insight: "Pain plus reflection equals progress"
+    }
+  };
+  
+  for (const [id, state] of Object.entries(initialStates)) {
+    personaStates.set(id, { ...state, lastUpdated: Date.now() });
+  }
+  console.log(`Initialized ${personaStates.size} persona states`);
+}
+
+initializePersonaStates();
+
 // Persona system prompts
 const PERSONA_PROMPTS = {
   hormozi: "You are Alex Hormozi. Respond as him - direct, value-focused, obsessed with offers and scaling. Keep responses concise and actionable.",
@@ -209,6 +310,17 @@ const httpServer = http.createServer(async (req, res) => {
     return;
   }
   
+  // Get persona states (goals, challenges, insights)
+  if (req.url === '/api/personas/states' && req.method === 'GET') {
+    const states = {};
+    for (const [id, state] of personaStates) {
+      states[id] = state;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(states));
+    return;
+  }
+  
   // Conversation API - generate dialogue between two personas
   if (req.url === '/api/conversation' && req.method === 'POST') {
     let body = '';
@@ -222,22 +334,39 @@ const httpServer = http.createServer(async (req, res) => {
           throw new Error('OPENROUTER_API_KEY not configured');
         }
         
-        const memoryPrompt = memoryContext ? `\n${memoryContext}` : '';
+        // Get persona states for richer conversation
+        const state1 = personaStates.get(persona1Id) || {};
+        const state2 = personaStates.get(persona2Id) || {};
         
-        const prompt = `You are generating a brief, natural conversation between two famous thinkers who cross paths.
+        const memoryPrompt = memoryContext ? `\nPREVIOUS CONVERSATION:\n${memoryContext}\nContinue from where they left off.` : '';
+        
+        const prompt = `You are generating a substantive conversation between two famous thinkers who cross paths.
 
 ${persona1Name} (${persona1Role}): ${PERSONA_PROMPTS[persona1Id] || 'A thoughtful advisor.'}
+- Currently working on: ${state1.goal || 'their craft'}
+- Facing challenge: ${state1.challenge || 'the usual obstacles'}
+- Recent insight: "${state1.insight || 'still figuring things out'}"
 
-${persona2Name} (${persona2Role}): ${PERSONA_PROMPTS[persona2Id] || 'A thoughtful advisor.'}${memoryPrompt}
+${persona2Name} (${persona2Role}): ${PERSONA_PROMPTS[persona2Id] || 'A thoughtful advisor.'}
+- Currently working on: ${state2.goal || 'their craft'}
+- Facing challenge: ${state2.challenge || 'the usual obstacles'}
+- Recent insight: "${state2.insight || 'still figuring things out'}"
+${memoryPrompt}
 
-Generate a short 4-turn conversation where they greet each other, share one insight each, and part ways. Each turn should be 1-2 sentences. They should stay in character. ${memoryContext ? 'Reference or build on their previous conversation.' : ''}
+Generate a 4-6 turn conversation that:
+1. Has a natural greeting that references something specific
+2. One shares a current challenge or goal they're working on
+3. The other offers a perspective from their expertise
+4. They exchange a meaningful insight or piece of advice
+5. They part with something actionable or thought-provoking
+
+Each turn should be 1-3 sentences. Stay deeply in character with their speaking style. Make it feel like two brilliant minds genuinely connecting.
 
 Format as JSON array:
 [
   {"speaker": "${persona1Id}", "text": "..."},
   {"speaker": "${persona2Id}", "text": "..."},
-  {"speaker": "${persona1Id}", "text": "..."},
-  {"speaker": "${persona2Id}", "text": "..."}
+  ...
 ]
 
 Only output the JSON array, nothing else.`;

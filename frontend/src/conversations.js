@@ -319,7 +319,25 @@ async function generateConversation(persona1, persona2) {
   
   console.log(`🤖 Generating conversation: ${persona1.name} + ${persona2.name}`);
   
-  // Skip memory lookup to be faster
+  // Get conversation memory for continuity
+  let memoryContext = '';
+  try {
+    const memRes = await fetch(`/api/memory/conversations?pair=${pairKey}`);
+    if (memRes.ok) {
+      const history = await memRes.json();
+      if (history.length > 0) {
+        const lastConvo = history[history.length - 1];
+        memoryContext = lastConvo.conversation.map(c => {
+          const name = c.speaker === persona1.id ? persona1.name : persona2.name;
+          return `${name}: "${c.text}"`;
+        }).join('\n');
+        console.log('📚 Found previous conversation to build on');
+      }
+    }
+  } catch (e) {
+    // Memory lookup failed, continue without it
+  }
+  
   try {
     console.log('📡 Calling /api/conversation...');
     const controller = new AbortController();
@@ -338,7 +356,7 @@ async function generateConversation(persona1, persona2) {
         persona2Name: persona2.name,
         persona1Role: persona1.role,
         persona2Role: persona2.role,
-        memoryContext: ''
+        memoryContext
       }),
       signal: controller.signal
     });
@@ -349,6 +367,22 @@ async function generateConversation(persona1, persona2) {
       const conversation = await response.json();
       if (conversation && conversation.length > 0) {
         console.log(`✅ Got ${conversation.length} turns from API`);
+        
+        // Store this conversation for future memory
+        try {
+          await fetch('/api/memory/conversations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              pairKey,
+              participants: [persona1.id, persona2.id],
+              conversation
+            })
+          });
+        } catch (e) {
+          // Memory store failed, continue anyway
+        }
+        
         return conversation;
       }
     }
@@ -361,39 +395,68 @@ async function generateConversation(persona1, persona2) {
   return getFallbackConversation(persona1, persona2);
 }
 
-// Pre-written fallback conversations for when API is unavailable
+// Persona-specific insights for fallback conversations
+const PERSONA_INSIGHTS = {
+  hormozi: ["The bottleneck is always the owner", "Make offers so good people feel stupid saying no", "Volume negates luck"],
+  robbins: ["State change precedes behavior change", "The quality of your life is the quality of your relationships", "Where focus goes, energy flows"],
+  kennedy: ["If you can't measure it, don't do it", "The best marketing is direct response", "Results beat creativity every time"],
+  abraham: ["Strategy of preeminence changes everything", "Find the hidden assets", "Optimize before you scale"],
+  halbert: ["A starving crowd beats clever copy", "Sell them what they want, give them what they need", "The list is everything"],
+  goggins: ["Stay hard", "You're not even close to your limits", "Suffering is the currency of growth"],
+  rosenberg: ["Every criticism is a tragic expression of unmet needs", "Connection before correction", "Empathy is a choice"],
+  naval: ["Specific knowledge can't be taught", "Seek wealth, not money", "Desire is suffering"],
+  franklin: ["An investment in knowledge pays the best interest", "Well done is better than well said", "Energy and persistence conquer all"],
+  lewis: ["You don't have a soul, you are a soul", "Hardship often prepares ordinary people for extraordinary destiny", "Integrity is doing right when no one is watching"],
+  musk: ["The first step is establishing that something is possible", "Failure is an option here", "Work like hell"],
+  mises: ["Human action is purposeful behavior", "The market is a democracy", "Economics is about human choices"],
+  adams: ["Systems beat goals", "Talent stacking creates unique value", "Persuasion is about what you leave out"],
+  munger: ["Invert, always invert", "Avoid stupidity rather than seeking brilliance", "The big money is in the waiting"],
+  aurelius: ["You have power over your mind, not outside events", "The obstacle is the way", "Waste no time arguing what a good man should be"],
+  feynman: ["The first principle is not fooling yourself", "I'd rather have questions I can't answer than answers I can't question", "Nature has imagination"],
+  dalio: ["Pain plus reflection equals progress", "Radical transparency works", "Principles are ways of dealing with reality"]
+};
+
+// Pre-written fallback conversations - now persona-aware
 function getFallbackConversation(persona1, persona2) {
   console.log('⚡ Using fallback conversation');
   
-  // Pick random conversation style
+  const insights1 = PERSONA_INSIGHTS[persona1.id] || ["Working on something interesting"];
+  const insights2 = PERSONA_INSIGHTS[persona2.id] || ["Thinking about the fundamentals"];
+  
+  const insight1 = insights1[Math.floor(Math.random() * insights1.length)];
+  const insight2 = insights2[Math.floor(Math.random() * insights2.length)];
+  
+  // Pick random conversation style with persona-specific content
   const styles = [
-    // Quick greeting
+    // Sharing insights
     [
-      { speaker: persona1.id, text: `${persona2.name}! Good to see you.` },
-      { speaker: persona2.id, text: `${persona1.name}, always a pleasure. How's the work going?` },
-      { speaker: persona1.id, text: `Making progress. We should compare notes sometime.` },
-      { speaker: persona2.id, text: `Absolutely. Let's talk soon.` }
+      { speaker: persona1.id, text: `${persona2.name}! I've been mulling over something.` },
+      { speaker: persona2.id, text: `I'm all ears. What's on your mind?` },
+      { speaker: persona1.id, text: `"${insight1}" - it keeps coming back to that.` },
+      { speaker: persona2.id, text: `Interesting. For me it's been "${insight2}". Maybe they're connected.` },
+      { speaker: persona1.id, text: `Everything's connected if you look hard enough. Let's dig into this.` }
     ],
-    // Philosophical
+    // Challenge discussion
     [
-      { speaker: persona1.id, text: `I've been thinking about what really matters...` },
-      { speaker: persona2.id, text: `A question we all wrestle with. What's your conclusion?` },
-      { speaker: persona1.id, text: `That action beats contemplation. Every time.` },
-      { speaker: persona2.id, text: `Wisdom in motion. I like it.` }
+      { speaker: persona2.id, text: `${persona1.name}, you look deep in thought.` },
+      { speaker: persona1.id, text: `Trying to solve a problem. "${insight1}" - but the application is tricky.` },
+      { speaker: persona2.id, text: `What if you approached it differently? "${insight2}"` },
+      { speaker: persona1.id, text: `Hmm. That reframes things. Thank you.` }
     ],
-    // Advice seeking
+    // Quick wisdom exchange
     [
-      { speaker: persona2.id, text: `Hey ${persona1.name}, got a minute?` },
-      { speaker: persona1.id, text: `Of course. What's on your mind?` },
-      { speaker: persona2.id, text: `Just looking for a fresh perspective on something.` },
-      { speaker: persona1.id, text: `Walk with me. Two minds are better than one.` }
+      { speaker: persona1.id, text: `Quick thought for you: "${insight1}"` },
+      { speaker: persona2.id, text: `Bold. Here's one back: "${insight2}"` },
+      { speaker: persona1.id, text: `Now we're talking. Same time tomorrow?` },
+      { speaker: persona2.id, text: `You know where to find me.` }
     ],
-    // Brief acknowledgment
+    // Mentorship moment
     [
-      { speaker: persona1.id, text: `*nods* ${persona2.name}.` },
-      { speaker: persona2.id, text: `${persona1.name}. Busy day?` },
-      { speaker: persona1.id, text: `Always. You know how it is.` },
-      { speaker: persona2.id, text: `That I do. Carry on.` }
+      { speaker: persona2.id, text: `${persona1.name}, what's the most important lesson you've learned lately?` },
+      { speaker: persona1.id, text: `That "${insight1}". Took me too long to really understand it.` },
+      { speaker: persona2.id, text: `The best lessons always do. I've been sitting with "${insight2}" myself.` },
+      { speaker: persona1.id, text: `We should write these down. Compare notes in a week?` },
+      { speaker: persona2.id, text: `Deal.` }
     ]
   ];
   
