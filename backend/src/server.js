@@ -13,7 +13,7 @@ const conversationMemory = new Map();
 // Persona positions - tracked server-side for persistence across client refreshes
 const personaPositions = new Map();
 
-// Initialize persona positions (scattered across the map)
+// Initialize persona positions (scattered WIDELY across the map)
 function initializePersonaPositions() {
   const personas = [
     'hormozi', 'robbins', 'kennedy', 'abraham', 'halbert',
@@ -21,18 +21,42 @@ function initializePersonaPositions() {
     'musk', 'mises', 'adams', 'munger', 'aurelius', 'feynman', 'dalio'
   ];
   
-  // Spawn in various locations across the map
+  // Passable area bounds (must match frontend)
+  const minX = 8, maxX = 47;
+  const minY = 8, maxY = 47;
+  
+  // Spawn scattered across the entire passable area
   personas.forEach((id, i) => {
-    const angle = (i / personas.length) * Math.PI * 2;
-    const radius = 8 + Math.random() * 10;
+    // Use golden angle for even distribution
+    const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+    const angle = i * goldenAngle;
+    const radius = 12 + (i / personas.length) * 8;
+    
+    // Center of passable area
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    
+    let x = centerX + Math.cos(angle) * radius;
+    let y = centerY + Math.sin(angle) * radius;
+    
+    // Add randomness
+    x += (Math.random() - 0.5) * 10;
+    y += (Math.random() - 0.5) * 10;
+    
+    // Clamp to bounds
+    x = Math.max(minX, Math.min(maxX, x));
+    y = Math.max(minY, Math.min(maxY, y));
+    
     personaPositions.set(id, {
-      gridX: 20 + Math.cos(angle) * radius,
-      gridY: 25 + Math.sin(angle) * radius * 0.6, // Flatten for isometric
+      gridX: x,
+      gridY: y,
       targetX: null,
       targetY: null,
       status: 'idle',
       lastUpdate: Date.now()
     });
+    
+    console.log(`  ${id}: (${x.toFixed(1)}, ${y.toFixed(1)})`);
   });
   
   console.log(`Initialized ${personaPositions.size} persona positions`);
@@ -380,6 +404,37 @@ Only output the JSON array, nothing else.`;
   if (req.url === '/api/personas/positions' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(getPersonaPositions()));
+    return;
+  }
+  
+  // Reset all stuck personas to idle
+  if (req.url === '/api/personas/reset' && req.method === 'POST') {
+    let count = 0;
+    for (const [id, pos] of personaPositions) {
+      if (pos.status === 'talking' || pos.status === 'chatting') {
+        pos.status = 'idle';
+        count++;
+      }
+    }
+    console.log(`Reset ${count} stuck personas to idle`);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ reset: count }));
+    return;
+  }
+  
+  // Scatter all personas to random positions
+  if (req.url === '/api/personas/scatter' && req.method === 'POST') {
+    const minX = 8, maxX = 47, minY = 8, maxY = 47;
+    for (const [id, pos] of personaPositions) {
+      pos.gridX = minX + Math.random() * (maxX - minX);
+      pos.gridY = minY + Math.random() * (maxY - minY);
+      pos.targetX = null;
+      pos.targetY = null;
+      pos.status = 'idle';
+    }
+    console.log('Scattered all personas to random positions');
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ scattered: personaPositions.size }));
     return;
   }
   
