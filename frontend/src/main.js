@@ -29,6 +29,29 @@ function createThemeSelector() {
   });
 }
 
+// Admin controls (scatter button)
+function createAdminControls() {
+  const container = document.createElement('div');
+  container.id = 'admin-controls';
+  container.innerHTML = `
+    <button id="scatter-btn" title="Scatter all personas">🔀 Scatter</button>
+  `;
+  document.getElementById('lcars-overlay').appendChild(container);
+  
+  document.getElementById('scatter-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('scatter-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳';
+    try {
+      await fetch('/api/personas/scatter', { method: 'POST' });
+    } catch (e) {
+      console.error('Scatter failed:', e);
+    }
+    btn.disabled = false;
+    btn.textContent = '🔀 Scatter';
+  });
+}
+
 // Fetch initial persona positions from server before starting
 async function fetchInitialPositions() {
   try {
@@ -50,6 +73,7 @@ async function init() {
   await world.init(positions);
   world.startLoop();
   createThemeSelector();
+  createAdminControls();
   connectWebSocket();
   updateTime();
   initChat(); // Initialize persona chat system

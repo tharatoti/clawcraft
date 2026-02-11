@@ -1007,3 +1007,34 @@ body {
   color: var(--lcars-orange);
   font-size: 12px;
 }
+
+/* Admin Controls */
+#admin-controls {
+  position: fixed;
+  top: 15px;
+  right: 15px;
+  z-index: 100;
+  pointer-events: auto;
+}
+
+#scatter-btn {
+  background: var(--lcars-purple);
+  color: #000;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 15px;
+  font-weight: bold;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+#scatter-btn:hover {
+  background: var(--lcars-orange);
+  transform: scale(1.05);
+}
+
+#scatter-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
