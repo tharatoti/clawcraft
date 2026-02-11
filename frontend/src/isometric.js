@@ -1,7 +1,7 @@
 // ClawCraft 2D Isometric Engine v2
 // Expanded with pipelines, services, animated units, and theme support
 
-import { speechBubbles, checkProximity, startConversation, renderSpeechBubble, cleanupBubbles } from './conversations.js';
+import { speechBubbles, checkProximity, startConversation, joinConversation, renderSpeechBubble, cleanupBubbles, setHoveredBubble, clearHoveredBubble, hoveredBubbleId } from './conversations.js';
 
 // Theme definitions
 const THEMES = {
@@ -220,6 +220,11 @@ class AnimatedUnit {
     if (this.frameTime > 200) {
       this.frame = (this.frame + 1) % 4;
       this.frameTime = 0;
+    }
+    
+    // Don't move if talking or chatting with user
+    if (this.status === 'talking' || this.status === 'chatting') {
+      return;
     }
     
     // Move toward target
@@ -602,12 +607,47 @@ class World {
           
           // If persona is clickable, open chat
           if (unit.data.clickable && window.openPersonaChat) {
+            // Pause the avatar while chatting
+            unit.status = 'chatting';
+            unit.targetX = unit.gridX;
+            unit.targetY = unit.gridY;
+            
+            // Store reference to resume when chat closes
+            window.currentChattingUnit = unit;
+            
             window.openPersonaChat(unit.id);
           }
         }
       }
       
       this.selectEntity(clicked);
+    });
+    
+    // Mouse move for bubble hover detection
+    this.canvas.addEventListener('mousemove', (e) => {
+      const rect = this.canvas.getBoundingClientRect();
+      const screenX = (e.clientX - rect.left - this.camera.x) / this.camera.zoom;
+      const screenY = (e.clientY - rect.top - this.camera.y) / this.camera.zoom;
+      
+      let foundHover = false;
+      
+      // Check if mouse is over any speech bubble
+      for (const unit of this.units.values()) {
+        if (speechBubbles.has(unit.id)) {
+          const pos = ISO.toScreen(unit.gridX, unit.gridY);
+          // Check if mouse is in bubble area (rough bounds)
+          if (screenX > pos.x - 120 && screenX < pos.x + 120 &&
+              screenY > pos.y - 150 && screenY < pos.y - 40) {
+            setHoveredBubble(unit.id);
+            foundHover = true;
+            break;
+          }
+        }
+      }
+      
+      if (!foundHover && hoveredBubbleId) {
+        clearHoveredBubble();
+      }
     });
     
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());

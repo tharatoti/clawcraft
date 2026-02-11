@@ -3,8 +3,8 @@
 
 import { getPersona, PERSONAS } from './personas.js';
 
-// Discord webhook URL (set this up in Discord channel settings)
-const DISCORD_WEBHOOK_URL = null; // Will be set via environment or config
+// Discord webhook URL
+const DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1470962754138669076/alSW64HRCrRESRJEL7fOPTPMflrY7f1khihUg2bAUBjOi-bIrsZiIFWMCs7hkfMhVQfA';
 
 // Active conversations - maps persona id to conversation group
 const activeConversations = new Map();
@@ -20,6 +20,26 @@ const lastConversationTime = new Map();
 
 // Speech bubbles to render
 export const speechBubbles = new Map();
+
+// Bubble hover state - keeps bubbles visible when mouse is over
+export let hoveredBubbleId = null;
+let hoverTimeout = null;
+
+// Set which bubble is being hovered
+export function setHoveredBubble(id) {
+  hoveredBubbleId = id;
+  if (hoverTimeout) {
+    clearTimeout(hoverTimeout);
+    hoverTimeout = null;
+  }
+}
+
+// Clear hover with 1-second delay
+export function clearHoveredBubble() {
+  hoverTimeout = setTimeout(() => {
+    hoveredBubbleId = null;
+  }, 1000);
+}
 
 // UI callback for showing conversation
 let onConversationUI = null;
@@ -98,21 +118,29 @@ export async function startConversation(unit1, unit2, uiCallback) {
       uiCallback([persona1, persona2], conversation);
     }
     
-    // Display speech bubbles sequentially
+    // Display speech bubbles sequentially - longer duration for readability
     for (const turn of conversation) {
       const speakerUnit = currentConversationGroup.find(u => u.id === turn.speaker) || unit1;
+      
+      // Calculate read time based on text length (avg 200 words/min = ~15 chars/sec)
+      const readTime = Math.max(4000, turn.text.length * 70);
       
       // Show speech bubble
       speechBubbles.set(speakerUnit.id, {
         text: turn.text,
         color: speakerUnit.color,
-        expires: Date.now() + 3000
+        expires: Date.now() + readTime,
+        speakerId: speakerUnit.id
       });
       
       // Wait for bubble duration
-      await new Promise(r => setTimeout(r, 3000));
-      speechBubbles.delete(speakerUnit.id);
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise(r => setTimeout(r, readTime));
+      
+      // Only delete if not being hovered
+      if (hoveredBubbleId !== speakerUnit.id) {
+        speechBubbles.delete(speakerUnit.id);
+      }
+      await new Promise(r => setTimeout(r, 500));
     }
     
     // Post to Discord
@@ -173,32 +201,20 @@ async function postToDiscord(personas, conversation) {
     return `**${speaker?.name || turn.speaker}:** ${turn.text}`;
   }).join('\n\n');
   
-  const names = personas.map(p => p.name).join(', ');
+  const names = personas.map(p => p.name).join(' & ');
   const message = `🗣️ **${names}** crossed paths...\n\n${transcript}`;
   
   try {
-    // Try webhook first (if configured)
-    const webhookUrl = localStorage.getItem('discord_webhook_url');
-    if (webhookUrl) {
-      await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: message,
-          username: 'ClawCraft Conversations',
-          avatar_url: 'https://i.imgur.com/4M34hi2.png' // Placeholder avatar
-        })
-      });
-      console.log('Posted to Discord via webhook');
-    } else {
-      // Fallback to backend API
-      await fetch('/api/discord/post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message })
-      });
-      console.log('Logged conversation (no webhook configured)');
-    }
+    await fetch(DISCORD_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content: message,
+        username: 'ClawCraft',
+        avatar_url: 'https://raw.githubusercontent.com/tharatoti/clawcraft/main/frontend/public/favicon.png'
+      })
+    });
+    console.log('Posted conversation to Discord');
   } catch (e) {
     console.error('Failed to post to Discord:', e);
   }
@@ -278,10 +294,13 @@ export function renderSpeechBubble(ctx, x, y, text, color) {
   });
 }
 
-// Clean up expired speech bubbles
+// Clean up expired speech bubbles (respects hover state)
 export function cleanupBubbles() {
   const now = Date.now();
   for (const [id, bubble] of speechBubbles) {
+    // Don't delete if being hovered
+    if (hoveredBubbleId === id) continue;
+    
     if (now > bubble.expires) {
       speechBubbles.delete(id);
     }

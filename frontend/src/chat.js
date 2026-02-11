@@ -109,6 +109,13 @@ export class PersonaChat {
   
   closeChat() {
     document.getElementById('persona-chat').classList.add('hidden');
+    
+    // Resume the avatar that was chatting
+    if (window.currentChattingUnit) {
+      window.currentChattingUnit.status = 'idle';
+      window.currentChattingUnit = null;
+    }
+    
     this.activePersona = null;
   }
   
