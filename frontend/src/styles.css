@@ -605,3 +605,101 @@ body {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.5; transform: scale(1.2); }
 }
+
+/* Conversation Overlay - Text Message Style */
+.conversation-overlay {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  width: 350px;
+  max-height: 400px;
+  background: rgba(0, 0, 0, 0.95);
+  border: 2px solid var(--lcars-orange);
+  border-radius: 15px;
+  overflow: hidden;
+  z-index: 1000;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  animation: slideIn 0.3s ease-out;
+}
+
+.conversation-overlay.hidden {
+  display: none;
+}
+
+@keyframes slideIn {
+  from { transform: translateY(100px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.conversation-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 15px;
+  background: linear-gradient(90deg, var(--lcars-orange), var(--lcars-salmon));
+  color: #000;
+  font-weight: bold;
+}
+
+.conversation-title {
+  font-size: 14px;
+}
+
+.conversation-close {
+  background: none;
+  border: none;
+  color: #000;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0 5px;
+}
+
+.conversation-messages {
+  padding: 15px;
+  max-height: 300px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.conversation-msg {
+  max-width: 85%;
+  animation: msgFadeIn 0.3s ease-out;
+}
+
+@keyframes msgFadeIn {
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.msg-sender {
+  font-size: 11px;
+  font-weight: bold;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+
+.msg-text {
+  background: rgba(255, 153, 0, 0.2);
+  border: 1px solid rgba(255, 153, 0, 0.3);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #fff;
+}
+
+/* Alternate message alignment for back-and-forth feel */
+.conversation-msg:nth-child(even) {
+  align-self: flex-end;
+}
+
+.conversation-msg:nth-child(even) .msg-text {
+  background: rgba(153, 153, 255, 0.2);
+  border-color: rgba(153, 153, 255, 0.3);
+}
+
+.conversation-msg:nth-child(even) .msg-sender {
+  text-align: right;
+}

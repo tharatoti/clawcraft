@@ -241,12 +241,23 @@ class AnimatedUnit {
     this.targetY = y;
   }
   
-  wander(centerX, centerY, radius) {
-    if (this.status === 'idle' && Math.random() < 0.01) {
-      const angle = Math.random() * Math.PI * 2;
-      const r = Math.random() * radius;
-      this.setTarget(centerX + Math.cos(angle) * r, centerY + Math.sin(angle) * r);
+  // Wander across the entire visible terrain
+  wander(minX, maxX, minY, maxY) {
+    // Don't wander if talking
+    if (this.status === 'talking') return;
+    
+    if (this.status === 'idle' && Math.random() < 0.008) {
+      // Pick a random spot within terrain bounds
+      const newX = minX + Math.random() * (maxX - minX);
+      const newY = minY + Math.random() * (maxY - minY);
+      this.setTarget(newX, newY);
     }
+    
+    // Keep within bounds
+    this.gridX = Math.max(minX, Math.min(maxX, this.gridX));
+    this.gridY = Math.max(minY, Math.min(maxY, this.gridY));
+    this.targetX = Math.max(minX, Math.min(maxX, this.targetX));
+    this.targetY = Math.max(minY, Math.min(maxY, this.targetY));
   }
 }
 
@@ -703,8 +714,8 @@ class World {
     const unitArray = [...this.units.values()];
     for (const unit of unitArray) {
       unit.update(dt);
-      // Make personas wander around larger area
-      unit.wander(5, 35, 12); // Expanded wandering area
+      // Make personas wander entire visible terrain (minX, maxX, minY, maxY)
+      unit.wander(-5, 40, 5, 35);
     }
     
     // Check for persona collisions/conversations
@@ -1331,8 +1342,34 @@ class World {
   // Check if any personas are close enough to have a conversation
   checkPersonaCollisions(units) {
     // Only check occasionally to reduce overhead
-    if (Math.random() > 0.01) return; // ~1% chance per frame
+    if (Math.random() > 0.02) return; // ~2% chance per frame
     
+    // Find all personas currently talking
+    const talkingUnits = units.filter(u => u.status === 'talking');
+    
+    // If there's an active conversation, check if others want to join
+    if (talkingUnits.length > 0) {
+      const conversationCenter = {
+        x: talkingUnits.reduce((sum, u) => sum + u.gridX, 0) / talkingUnits.length,
+        y: talkingUnits.reduce((sum, u) => sum + u.gridY, 0) / talkingUnits.length
+      };
+      
+      for (const unit of units) {
+        if (unit.status !== 'talking') {
+          const dx = unit.gridX - conversationCenter.x;
+          const dy = unit.gridY - conversationCenter.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          
+          // If close enough, they can join the conversation
+          if (dist < 1.5) {
+            joinConversation(unit, talkingUnits);
+          }
+        }
+      }
+      return;
+    }
+    
+    // Start new conversations between idle personas
     for (let i = 0; i < units.length; i++) {
       for (let j = i + 1; j < units.length; j++) {
         const unit1 = units[i];
@@ -1341,14 +1378,58 @@ class World {
         // Skip if either is already talking
         if (unit1.status === 'talking' || unit2.status === 'talking') continue;
         
-        // Check proximity
-        if (checkProximity(unit1, unit2, 2.5)) {
+        // Check proximity (reduced to 1 tile)
+        if (checkProximity(unit1, unit2, 1.0)) {
           // Start a conversation (async, handles cooldowns internally)
-          startConversation(unit1, unit2);
-          return; // Only one conversation at a time
+          startConversation(unit1, unit2, this.showConversationUI.bind(this));
+          return; // Only one new conversation at a time
         }
       }
     }
+  }
+  
+  // Show conversation in a text-message style overlay
+  showConversationUI(participants, messages) {
+    let overlay = document.getElementById('conversation-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'conversation-overlay';
+      overlay.className = 'conversation-overlay';
+      document.body.appendChild(overlay);
+    }
+    
+    const participantNames = participants.map(p => p.name).join(' & ');
+    
+    overlay.innerHTML = `
+      <div class="conversation-header">
+        <span class="conversation-title">💬 ${participantNames}</span>
+        <button class="conversation-close" onclick="this.parentElement.parentElement.classList.add('hidden')">×</button>
+      </div>
+      <div class="conversation-messages" id="conversation-messages"></div>
+    `;
+    
+    overlay.classList.remove('hidden');
+    
+    // Add messages with animation
+    const messagesContainer = document.getElementById('conversation-messages');
+    messages.forEach((msg, i) => {
+      setTimeout(() => {
+        const participant = participants.find(p => p.id === msg.speaker);
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `conversation-msg ${msg.speaker}`;
+        msgDiv.innerHTML = `
+          <div class="msg-sender" style="color: ${participant?.color || '#fff'}">${participant?.name || msg.speaker}</div>
+          <div class="msg-text">${msg.text}</div>
+        `;
+        messagesContainer.appendChild(msgDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      }, i * 3000);
+    });
+    
+    // Auto-hide after conversation ends
+    setTimeout(() => {
+      overlay.classList.add('hidden');
+    }, messages.length * 3000 + 2000);
   }
   
   renderUnit(unit) {

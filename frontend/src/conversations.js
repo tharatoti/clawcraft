@@ -3,14 +3,17 @@
 
 import { getPersona, PERSONAS } from './personas.js';
 
-// Discord channel for casual conversations
-const CASUAL_CHANNEL_ID = '1470956181936668885';
+// Discord webhook URL (set this up in Discord channel settings)
+const DISCORD_WEBHOOK_URL = null; // Will be set via environment or config
 
-// Active conversations
+// Active conversations - maps persona id to conversation group
 const activeConversations = new Map();
 
+// Current conversation participants
+let currentConversationGroup = [];
+
 // Conversation cooldown per persona pair (ms)
-const CONVERSATION_COOLDOWN = 5 * 60 * 1000; // 5 minutes
+const CONVERSATION_COOLDOWN = 3 * 60 * 1000; // 3 minutes
 
 // Last conversation time per pair
 const lastConversationTime = new Map();
@@ -18,36 +21,64 @@ const lastConversationTime = new Map();
 // Speech bubbles to render
 export const speechBubbles = new Map();
 
+// UI callback for showing conversation
+let onConversationUI = null;
+
 // Check if two personas are close enough to bump
-export function checkProximity(unit1, unit2, threshold = 2) {
+export function checkProximity(unit1, unit2, threshold = 1) {
   const dx = unit1.gridX - unit2.gridX;
   const dy = unit1.gridY - unit2.gridY;
   return Math.sqrt(dx * dx + dy * dy) < threshold;
 }
 
-// Get a unique key for a persona pair
-function getPairKey(id1, id2) {
-  return [id1, id2].sort().join('-');
+// Get a unique key for a persona group
+function getGroupKey(ids) {
+  return [...ids].sort().join('-');
 }
 
 // Check if a conversation can happen
-function canConverse(id1, id2) {
-  const key = getPairKey(id1, id2);
+function canConverse(ids) {
+  const key = getGroupKey(ids);
   const lastTime = lastConversationTime.get(key) || 0;
   return Date.now() - lastTime > CONVERSATION_COOLDOWN;
 }
 
+// Allow a third persona to join an ongoing conversation
+export function joinConversation(unit, talkingUnits) {
+  if (currentConversationGroup.length >= 4) return; // Max 4 participants
+  if (currentConversationGroup.find(u => u.id === unit.id)) return; // Already in
+  
+  // Check cooldown with all current participants
+  const allIds = [...currentConversationGroup.map(u => u.id), unit.id];
+  if (!canConverse(allIds)) return;
+  
+  console.log(`${unit.name} joins the conversation!`);
+  unit.status = 'talking';
+  currentConversationGroup.push(unit);
+  
+  // Show a joining message
+  const persona = getPersona(unit.id);
+  speechBubbles.set(unit.id, {
+    text: `*joins the conversation*`,
+    color: unit.color,
+    expires: Date.now() + 2000
+  });
+}
+
 // Start a conversation between two personas
-export async function startConversation(unit1, unit2, onComplete) {
-  if (!canConverse(unit1.id, unit2.id)) return;
+export async function startConversation(unit1, unit2, uiCallback) {
+  if (!canConverse([unit1.id, unit2.id])) return;
   if (activeConversations.has(unit1.id) || activeConversations.has(unit2.id)) return;
   
-  // Mark as conversing
-  activeConversations.set(unit1.id, unit2.id);
-  activeConversations.set(unit2.id, unit1.id);
+  // Initialize conversation group
+  currentConversationGroup = [unit1, unit2];
   
-  const pairKey = getPairKey(unit1.id, unit2.id);
-  lastConversationTime.set(pairKey, Date.now());
+  // Mark as conversing
+  activeConversations.set(unit1.id, true);
+  activeConversations.set(unit2.id, true);
+  
+  const groupKey = getGroupKey([unit1.id, unit2.id]);
+  lastConversationTime.set(groupKey, Date.now());
   
   // Stop both personas from walking
   unit1.status = 'talking';
@@ -62,37 +93,43 @@ export async function startConversation(unit1, unit2, onComplete) {
     // Generate conversation
     const conversation = await generateConversation(persona1, persona2);
     
+    // Show UI overlay if callback provided
+    if (uiCallback) {
+      uiCallback([persona1, persona2], conversation);
+    }
+    
     // Display speech bubbles sequentially
     for (const turn of conversation) {
-      const speaker = turn.speaker === persona1.id ? unit1 : unit2;
+      const speakerUnit = currentConversationGroup.find(u => u.id === turn.speaker) || unit1;
       
       // Show speech bubble
-      speechBubbles.set(speaker.id, {
+      speechBubbles.set(speakerUnit.id, {
         text: turn.text,
-        color: speaker.color,
-        expires: Date.now() + 4000
+        color: speakerUnit.color,
+        expires: Date.now() + 3000
       });
       
       // Wait for bubble duration
-      await new Promise(r => setTimeout(r, 4000));
-      speechBubbles.delete(speaker.id);
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise(r => setTimeout(r, 3000));
+      speechBubbles.delete(speakerUnit.id);
+      await new Promise(r => setTimeout(r, 300));
     }
     
     // Post to Discord
-    await postToDiscord(persona1, persona2, conversation);
+    const allPersonas = currentConversationGroup.map(u => getPersona(u.id));
+    await postToDiscord(allPersonas, conversation);
     
   } catch (e) {
     console.error('Conversation error:', e);
   }
   
-  // Resume walking
-  unit1.status = 'idle';
-  unit2.status = 'idle';
-  activeConversations.delete(unit1.id);
-  activeConversations.delete(unit2.id);
+  // Resume walking for all participants
+  for (const unit of currentConversationGroup) {
+    unit.status = 'idle';
+    activeConversations.delete(unit.id);
+  }
   
-  if (onComplete) onComplete();
+  currentConversationGroup = [];
 }
 
 // Generate AI conversation between personas
@@ -127,24 +164,41 @@ async function generateConversation(persona1, persona2) {
   ];
 }
 
-// Post conversation transcript to Discord
-async function postToDiscord(persona1, persona2, conversation) {
+// Post conversation transcript to Discord via webhook
+async function postToDiscord(personas, conversation) {
+  const personaMap = new Map(personas.map(p => [p.id, p]));
+  
   const transcript = conversation.map(turn => {
-    const speaker = turn.speaker === persona1.id ? persona1.name : persona2.name;
-    return `**${speaker}:** ${turn.text}`;
+    const speaker = personaMap.get(turn.speaker);
+    return `**${speaker?.name || turn.speaker}:** ${turn.text}`;
   }).join('\n\n');
   
-  const message = `🗣️ **${persona1.name}** and **${persona2.name}** crossed paths...\n\n${transcript}`;
+  const names = personas.map(p => p.name).join(', ');
+  const message = `🗣️ **${names}** crossed paths...\n\n${transcript}`;
   
   try {
-    await fetch('/api/discord/post', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        channelId: CASUAL_CHANNEL_ID,
-        message
-      })
-    });
+    // Try webhook first (if configured)
+    const webhookUrl = localStorage.getItem('discord_webhook_url');
+    if (webhookUrl) {
+      await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: message,
+          username: 'ClawCraft Conversations',
+          avatar_url: 'https://i.imgur.com/4M34hi2.png' // Placeholder avatar
+        })
+      });
+      console.log('Posted to Discord via webhook');
+    } else {
+      // Fallback to backend API
+      await fetch('/api/discord/post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message })
+      });
+      console.log('Logged conversation (no webhook configured)');
+    }
   } catch (e) {
     console.error('Failed to post to Discord:', e);
   }
