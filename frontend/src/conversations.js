@@ -21,16 +21,16 @@ let conversationHasStarted = false; // True once first message shown
 const CONVERSATION_COOLDOWN = 2 * 60 * 1000; // 2 minutes
 
 // Maximum time waiting for API before using fallback
-const API_TIMEOUT = 8 * 1000; // 8 seconds
+const API_TIMEOUT = 30 * 1000; // 30 seconds for deeper conversations
 
 // Maximum time for awkward silence before giving up
-const AWKWARD_SILENCE_TIMEOUT = 10 * 1000; // 10 seconds with no dialog = move on
+const AWKWARD_SILENCE_TIMEOUT = 35 * 1000; // 35 seconds with no dialog = move on
 
 // Maximum time a conversation can last
 const MAX_CONVERSATION_TIME = 60 * 1000; // 60 seconds total
 
 // Chance to actually stop for a conversation (not every bump)
-const CONVERSATION_CHANCE = 0.4; // 40% chance to engage
+const CONVERSATION_CHANCE = 0.1; // 10% chance to engage - fewer but deeper conversations
 
 // Last conversation time per pair
 const lastConversationTime = new Map();
@@ -415,7 +415,7 @@ const PERSONA_INSIGHTS = {
   dalio: ["Pain plus reflection equals progress", "Radical transparency works", "Principles are ways of dealing with reality"]
 };
 
-// Pre-written fallback conversations - now persona-aware
+// Pre-written fallback conversations - deeper, topic-focused
 function getFallbackConversation(persona1, persona2) {
   console.log('⚡ Using fallback conversation');
   
@@ -425,37 +425,35 @@ function getFallbackConversation(persona1, persona2) {
   const insight1 = insights1[Math.floor(Math.random() * insights1.length)];
   const insight2 = insights2[Math.floor(Math.random() * insights2.length)];
   
-  // Pick random conversation style with persona-specific content
+  // Deeper conversation templates that explore one topic
   const styles = [
-    // Sharing insights
+    // Problem-solving dialogue
     [
-      { speaker: persona1.id, text: `${persona2.name}! I've been mulling over something.` },
-      { speaker: persona2.id, text: `I'm all ears. What's on your mind?` },
-      { speaker: persona1.id, text: `"${insight1}" - it keeps coming back to that.` },
-      { speaker: persona2.id, text: `Interesting. For me it's been "${insight2}". Maybe they're connected.` },
-      { speaker: persona1.id, text: `Everything's connected if you look hard enough. Let's dig into this.` }
+      { speaker: persona1.id, text: `${persona2.name}, I've been wrestling with something. "${insight1}" - I believe it deeply, but I'm struggling with how to apply it when the stakes are high and people resist change.` },
+      { speaker: persona2.id, text: `That's the crux, isn't it? In my experience, "${insight2}" - and I wonder if your challenge is less about the idea itself and more about the container you're putting it in. What does resistance look like in your case?` },
+      { speaker: persona1.id, text: `It's subtle. People nod along but don't actually change behavior. There's a gap between intellectual agreement and embodied action.` },
+      { speaker: persona2.id, text: `Ah. The knowing-doing gap. I've found that gap closes when people discover the truth themselves rather than being told. Your job might not be to convince, but to create conditions where they can't avoid seeing it.` },
+      { speaker: persona1.id, text: `Create conditions... so instead of pushing the insight, I design experiences that make the insight inevitable. That's a fundamental shift.` },
+      { speaker: persona2.id, text: `Exactly. You stop being the teacher and become the architect of revelation. It's slower, but it sticks.` }
     ],
-    // Challenge discussion
+    // Exploring disagreement
     [
-      { speaker: persona2.id, text: `${persona1.name}, you look deep in thought.` },
-      { speaker: persona1.id, text: `Trying to solve a problem. "${insight1}" - but the application is tricky.` },
-      { speaker: persona2.id, text: `What if you approached it differently? "${insight2}"` },
-      { speaker: persona1.id, text: `Hmm. That reframes things. Thank you.` }
+      { speaker: persona2.id, text: `${persona1.name}, I've been thinking about your principle - "${insight1}". I'm not sure I fully agree. In my world, "${insight2}" often leads to different conclusions.` },
+      { speaker: persona1.id, text: `I appreciate the pushback. Where specifically does it break down for you? I'm curious about the edge cases.` },
+      { speaker: persona2.id, text: `When people are already overwhelmed. Your approach assumes a baseline of capacity that isn't always there. Sometimes the gentler path gets further.` },
+      { speaker: persona1.id, text: `That's fair. I do tend to optimize for peak performers. But maybe there's a synthesis - the same destination reached through different doors depending on where someone's starting from.` },
+      { speaker: persona2.id, text: `Right. Not compromising the truth, but meeting people where they are. The mountain doesn't change, but there are many trails up.` },
+      { speaker: persona1.id, text: `Many trails, one summit. I can work with that. You've given me something to chew on.` }
     ],
-    // Quick wisdom exchange
+    // Building on ideas
     [
-      { speaker: persona1.id, text: `Quick thought for you: "${insight1}"` },
-      { speaker: persona2.id, text: `Bold. Here's one back: "${insight2}"` },
-      { speaker: persona1.id, text: `Now we're talking. Same time tomorrow?` },
-      { speaker: persona2.id, text: `You know where to find me.` }
-    ],
-    // Mentorship moment
-    [
-      { speaker: persona2.id, text: `${persona1.name}, what's the most important lesson you've learned lately?` },
-      { speaker: persona1.id, text: `That "${insight1}". Took me too long to really understand it.` },
-      { speaker: persona2.id, text: `The best lessons always do. I've been sitting with "${insight2}" myself.` },
-      { speaker: persona1.id, text: `We should write these down. Compare notes in a week?` },
-      { speaker: persona2.id, text: `Deal.` }
+      { speaker: persona1.id, text: `I've been developing a framework around "${insight1}" but I feel like I'm missing a crucial piece. Something that connects it to daily practice.` },
+      { speaker: persona2.id, text: `Tell me more about the framework. Sometimes the missing piece is visible from a different angle.` },
+      { speaker: persona1.id, text: `The theory is solid - I can explain why it works. But people hear it, agree, then go back to their old patterns by Thursday. The gap between understanding and implementing keeps frustrating me.` },
+      { speaker: persona2.id, text: `What if the implementation IS the understanding? In my work, "${insight2}" - and I've found that intellectual grasp is overrated. People need to feel the truth in their body, not just their head.` },
+      { speaker: persona1.id, text: `So the framework should be experiential first, conceptual second. Start with the doing, then explain why it worked.` },
+      { speaker: persona2.id, text: `Precisely. Let them taste it before you name it. The explanation becomes a recognition rather than a prescription.` },
+      { speaker: persona1.id, text: `This is good. Really good. I've been sequencing it backwards this whole time.` }
     ]
   ];
   

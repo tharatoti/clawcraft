@@ -340,36 +340,41 @@ const httpServer = http.createServer(async (req, res) => {
         
         const memoryPrompt = memoryContext ? `\nPREVIOUS CONVERSATION:\n${memoryContext}\nContinue from where they left off.` : '';
         
-        const prompt = `You are generating a substantive conversation between two famous thinkers who cross paths.
+        const prompt = `Generate a deep, insight-rich conversation between two brilliant thinkers.
 
-${persona1Name} (${persona1Role}): ${PERSONA_PROMPTS[persona1Id] || 'A thoughtful advisor.'}
-- Currently working on: ${state1.goal || 'their craft'}
-- Facing challenge: ${state1.challenge || 'the usual obstacles'}
-- Recent insight: "${state1.insight || 'still figuring things out'}"
+PERSONA 1 - ${persona1Name} (${persona1Role}):
+${PERSONA_PROMPTS[persona1Id] || 'A thoughtful advisor.'}
+Current focus: ${state1.goal || 'their craft'}
+Challenge: ${state1.challenge || 'the usual obstacles'}
+Key insight: "${state1.insight || 'working through ideas'}"
 
-${persona2Name} (${persona2Role}): ${PERSONA_PROMPTS[persona2Id] || 'A thoughtful advisor.'}
-- Currently working on: ${state2.goal || 'their craft'}
-- Facing challenge: ${state2.challenge || 'the usual obstacles'}
-- Recent insight: "${state2.insight || 'still figuring things out'}"
+PERSONA 2 - ${persona2Name} (${persona2Role}):
+${PERSONA_PROMPTS[persona2Id] || 'A thoughtful advisor.'}
+Current focus: ${state2.goal || 'their craft'}
+Challenge: ${state2.challenge || 'the usual obstacles'}  
+Key insight: "${state2.insight || 'working through ideas'}"
 ${memoryPrompt}
 
-Generate a 4-6 turn conversation that:
-1. Has a natural greeting that references something specific
-2. One shares a current challenge or goal they're working on
-3. The other offers a perspective from their expertise
-4. They exchange a meaningful insight or piece of advice
-5. They part with something actionable or thought-provoking
+CONVERSATION STRUCTURE:
+1. ${persona1Name} opens by sharing a specific problem or question they're wrestling with (not just a greeting)
+2. ${persona2Name} asks a clarifying question or reframes the problem from their unique perspective
+3. They explore the topic together - building on each other's ideas, challenging assumptions
+4. One offers a concrete insight or framework that synthesizes their discussion
+5. They identify an actionable takeaway or deeper question to ponder
 
-Each turn should be 1-3 sentences. Stay deeply in character with their speaking style. Make it feel like two brilliant minds genuinely connecting.
+GUIDELINES:
+- Focus deeply on ONE topic - don't jump between subjects
+- Each response should ADD to understanding, not just trade quips
+- Ask "why" and "how" questions to go deeper
+- Share specific examples, frameworks, or mental models
+- Disagree respectfully when worldviews clash - that's where insight emerges
+- 2-4 sentences per turn, meaty and substantive
+- Stay deeply in character with authentic speaking patterns
 
-Format as JSON array:
-[
-  {"speaker": "${persona1Id}", "text": "..."},
-  {"speaker": "${persona2Id}", "text": "..."},
-  ...
-]
+Generate 6-8 turns of dialogue.
 
-Only output the JSON array, nothing else.`;
+Output ONLY a JSON array:
+[{"speaker": "${persona1Id}", "text": "..."}, {"speaker": "${persona2Id}", "text": "..."}, ...]`;
 
         // Try multiple free models with fallback
         const freeModels = [
@@ -396,10 +401,10 @@ Only output the JSON array, nothing else.`;
               body: JSON.stringify({
                 model: model,
                 messages: [{ role: 'user', content: prompt }],
-                max_tokens: 800,
-                temperature: 0.9
+                max_tokens: 1200,
+                temperature: 0.85
               }),
-              signal: AbortSignal.timeout(20000)
+              signal: AbortSignal.timeout(35000)
             });
             
             if (response.ok) {
