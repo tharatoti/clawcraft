@@ -10,34 +10,27 @@ canvas.height = window.innerHeight;
 // Create world
 const world = new World(canvas);
 
-// Theme selector
-function createThemeSelector() {
+// Header controls (settings + scatter)
+function createHeaderControls() {
   const container = document.createElement('div');
-  container.id = 'theme-selector';
+  container.id = 'header-controls';
   container.innerHTML = `
-    <label>THEME:</label>
-    <select id="theme-select">
-      ${Object.entries(THEMES).map(([id, theme]) => 
-        `<option value="${id}">${theme.name}</option>`
-      ).join('')}
-    </select>
+    <button id="scatter-btn" title="Scatter all personas">🔀</button>
+    <div class="settings-wrapper">
+      <button id="settings-btn" title="Settings">⚙️</button>
+      <div id="settings-dropdown" class="settings-dropdown hidden">
+        <label>Theme</label>
+        <select id="theme-select">
+          ${Object.entries(THEMES).map(([id, theme]) => 
+            `<option value="${id}">${theme.name}</option>`
+          ).join('')}
+        </select>
+      </div>
+    </div>
   `;
   document.getElementById('lcars-overlay').appendChild(container);
   
-  document.getElementById('theme-select').addEventListener('change', async (e) => {
-    await world.setTheme(e.target.value);
-  });
-}
-
-// Admin controls (scatter button)
-function createAdminControls() {
-  const container = document.createElement('div');
-  container.id = 'admin-controls';
-  container.innerHTML = `
-    <button id="scatter-btn" title="Scatter all personas">🔀 Scatter</button>
-  `;
-  document.getElementById('lcars-overlay').appendChild(container);
-  
+  // Scatter button
   document.getElementById('scatter-btn').addEventListener('click', async () => {
     const btn = document.getElementById('scatter-btn');
     btn.disabled = true;
@@ -48,9 +41,30 @@ function createAdminControls() {
       console.error('Scatter failed:', e);
     }
     btn.disabled = false;
-    btn.textContent = '🔀 Scatter';
+    btn.textContent = '🔀';
+  });
+  
+  // Settings toggle
+  document.getElementById('settings-btn').addEventListener('click', () => {
+    document.getElementById('settings-dropdown').classList.toggle('hidden');
+  });
+  
+  // Theme selector
+  document.getElementById('theme-select').addEventListener('change', async (e) => {
+    await world.setTheme(e.target.value);
+  });
+  
+  // Close dropdown when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.settings-wrapper')) {
+      document.getElementById('settings-dropdown').classList.add('hidden');
+    }
   });
 }
+
+// Legacy function names for compatibility
+function createThemeSelector() {}
+function createAdminControls() {}
 
 // Fetch initial persona positions from server before starting
 async function fetchInitialPositions() {
@@ -72,8 +86,7 @@ async function init() {
   
   await world.init(positions);
   world.startLoop();
-  createThemeSelector();
-  createAdminControls();
+  createHeaderControls();
   connectWebSocket();
   updateTime();
   initChat(); // Initialize persona chat system

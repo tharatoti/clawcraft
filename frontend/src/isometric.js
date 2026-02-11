@@ -461,17 +461,19 @@ class World {
       status: 'active'
     });
     
-    // External integrations (spread out)
+    // External integrations (spread out) - marked as external for blue theme
     this.createBuilding('extraction', ox + 5, oy + 24, {
       id: 'home-assistant',
       name: 'HOME ASSISTANT',
-      status: 'connected'
+      status: 'connected',
+      external: true
     });
     
     this.createBuilding('extraction', ox + 28, oy + 24, {
       id: 'alpaca',
       name: 'ALPACA TRADING',
-      status: 'connected'
+      status: 'connected',
+      external: true
     });
     
     // Services (scattered)
@@ -1473,23 +1475,45 @@ class World {
       const from = ISO.toScreen(fromBuilding.gridX, fromBuilding.gridY);
       const to = ISO.toScreen(toBuilding.gridX, toBuilding.gridY);
       
+      // Calculate right-angle path (L-shaped)
+      const midX = from.x;
+      const midY = to.y;
+      
       // Pipeline background
       ctx.strokeStyle = pipeline.active ? colors.pipelineActive : colors.pipeline;
       ctx.lineWidth = 6;
       ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
       
+      // Draw L-shaped path
       ctx.beginPath();
       ctx.moveTo(from.x, from.y);
-      ctx.lineTo(to.x, to.y);
+      ctx.lineTo(midX, midY); // Vertical first
+      ctx.lineTo(to.x, to.y); // Then horizontal
       ctx.stroke();
       
-      // Animated flow dots
+      // Animated flow dots along the L-path
       if (pipeline.active) {
         const numDots = 5;
+        const leg1Len = Math.abs(midY - from.y);
+        const leg2Len = Math.abs(to.x - midX);
+        const totalLen = leg1Len + leg2Len;
+        
         for (let i = 0; i < numDots; i++) {
           const t = (pipeline.flowOffset + i / numDots) % 1;
-          const x = from.x + (to.x - from.x) * t;
-          const y = from.y + (to.y - from.y) * t;
+          const dist = t * totalLen;
+          
+          let x, y;
+          if (dist < leg1Len) {
+            // On first leg (vertical)
+            x = from.x;
+            y = from.y + (midY - from.y) * (dist / leg1Len);
+          } else {
+            // On second leg (horizontal)
+            const leg2T = (dist - leg1Len) / leg2Len;
+            x = midX + (to.x - midX) * leg2T;
+            y = midY;
+          }
           
           ctx.fillStyle = colors.green;
           ctx.beginPath();
@@ -1533,8 +1557,11 @@ class World {
       const entitySeed = (entity.id || entity.data.id || 'default').charCodeAt(0);
       const pulsePhase = Math.sin(now * 0.003 + entitySeed) * 0.5 + 0.5;
       
-      // Status glow with pulse
-      if (isActive) {
+      // Status glow with pulse - blue for external services
+      if (entity.data.external) {
+        ctx.shadowColor = colors.blue;
+        ctx.shadowBlur = 12 + pulsePhase * 8;
+      } else if (isActive) {
         ctx.shadowColor = colors.green;
         ctx.shadowBlur = 10 + pulsePhase * 10;
       } else if (entity.data.status === 'error') {
@@ -1553,11 +1580,12 @@ class World {
         this.drawBuildingParticles(pos.x, y, entity, now);
       }
       
-      // Status indicator with pulse
+      // Status indicator with pulse - external services get blue indicator
       const indicatorRadius = isActive ? 5 + pulsePhase * 2 : 6;
       ctx.beginPath();
       ctx.arc(x + width - 15, y + 10, indicatorRadius, 0, Math.PI * 2);
-      ctx.fillStyle = entity.data.status === 'active' ? colors.green :
+      ctx.fillStyle = entity.data.external ? '#00aaff' :
+                      entity.data.status === 'active' ? colors.green :
                       entity.data.status === 'connected' ? colors.blue :
                       entity.data.status === 'error' ? colors.red : colors.gold;
       ctx.fill();
@@ -1565,8 +1593,8 @@ class World {
       ctx.lineWidth = 1;
       ctx.stroke();
       
-      // Name label
-      ctx.fillStyle = colors.orange;
+      // Name label - blue for external services
+      ctx.fillStyle = entity.data.external ? '#00aaff' : colors.orange;
       ctx.font = 'bold 11px "Helvetica Neue", Arial';
       ctx.textAlign = 'center';
       ctx.fillText(entity.data.name, pos.x, y + height + 15);

@@ -55,12 +55,13 @@ body {
   pointer-events: auto;
 }
 
-/* Top Bar */
+/* Top Bar - Clean dark theme */
 .lcars-bar {
   display: flex;
   align-items: center;
-  height: 60px;
-  background: linear-gradient(90deg, var(--lcars-purple) 0%, var(--lcars-purple) 200px, transparent 200px);
+  height: 50px;
+  background: linear-gradient(90deg, rgba(30, 30, 50, 0.95) 0%, rgba(20, 20, 40, 0.9) 100%);
+  border-bottom: 2px solid var(--lcars-orange);
 }
 
 .lcars-top {
@@ -68,18 +69,19 @@ body {
 }
 
 .lcars-elbow {
-  width: 80px;
-  height: 60px;
-  background: var(--lcars-purple);
+  width: 60px;
+  height: 50px;
+  background: var(--lcars-orange);
 }
 
 .lcars-elbow-tl {
-  border-radius: 0 0 40px 0;
+  border-radius: 0 0 30px 0;
 }
 
 .lcars-elbow-tr {
-  border-radius: 0 0 0 40px;
+  border-radius: 0 0 0 30px;
   margin-left: auto;
+  display: none; /* Hide right elbow for cleaner look */
 }
 
 .lcars-title {
@@ -93,9 +95,9 @@ body {
 
 .lcars-status {
   display: flex;
-  gap: 30px;
+  gap: 25px;
   margin-left: auto;
-  margin-right: 30px;
+  margin-right: 120px; /* Space for header controls */
 }
 
 .status-item {
@@ -326,44 +328,7 @@ body {
   color: var(--lcars-red);
 }
 
-/* Theme selector */
-#theme-selector {
-  position: absolute;
-  top: 70px;
-  right: 20px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: rgba(0, 0, 0, 0.7);
-  border: 2px solid var(--lcars-purple);
-  border-radius: 20px;
-  padding: 8px 16px;
-}
-
-#theme-selector label {
-  font-size: 12px;
-  color: var(--lcars-purple);
-  letter-spacing: 1px;
-}
-
-#theme-select {
-  background: var(--lcars-bg);
-  border: 1px solid var(--lcars-orange);
-  border-radius: 4px;
-  color: var(--lcars-orange);
-  padding: 4px 8px;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-#theme-select:hover {
-  border-color: var(--lcars-gold);
-}
-
-#theme-select:focus {
-  outline: none;
-  border-color: var(--lcars-blue);
-}
+/* Theme selector - now in settings dropdown, legacy styles removed */
 
 /* Dynamic theme colors */
 :root {
@@ -1008,33 +973,74 @@ body {
   font-size: 12px;
 }
 
-/* Admin Controls */
-#admin-controls {
+/* Header Controls */
+#header-controls {
   position: fixed;
   top: 15px;
   right: 15px;
   z-index: 100;
   pointer-events: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
-#scatter-btn {
-  background: var(--lcars-purple);
-  color: #000;
-  border: none;
-  padding: 8px 14px;
-  border-radius: 15px;
-  font-weight: bold;
-  font-size: 13px;
+#header-controls button {
+  background: rgba(40, 40, 60, 0.9);
+  color: var(--lcars-orange);
+  border: 1px solid var(--lcars-orange);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 16px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
-#scatter-btn:hover {
+#header-controls button:hover {
   background: var(--lcars-orange);
+  color: #000;
   transform: scale(1.05);
 }
 
-#scatter-btn:disabled {
+#header-controls button:disabled {
   opacity: 0.6;
   cursor: wait;
+}
+
+.settings-wrapper {
+  position: relative;
+}
+
+.settings-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  background: rgba(20, 20, 40, 0.95);
+  border: 1px solid var(--lcars-orange);
+  border-radius: 8px;
+  padding: 12px;
+  min-width: 150px;
+}
+
+.settings-dropdown.hidden {
+  display: none;
+}
+
+.settings-dropdown label {
+  display: block;
+  color: var(--lcars-orange);
+  font-size: 11px;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.settings-dropdown select {
+  width: 100%;
+  background: rgba(30, 30, 50, 0.9);
+  color: #fff;
+  border: 1px solid #444;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 12px;
 }
