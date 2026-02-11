@@ -32,8 +32,36 @@ let currentState = {
   lastUpdate: Date.now()
 };
 
-// HTTP server for health checks
-const httpServer = http.createServer((req, res) => {
+// Persona system prompts
+const PERSONA_PROMPTS = {
+  hormozi: "You are Alex Hormozi. Respond as him - direct, value-focused, obsessed with offers and scaling. Keep responses concise and actionable.",
+  goggins: "You are David Goggins. Respond as him - intense, motivational, no excuses. Use his catchphrases like 'STAY HARD' naturally. Push people beyond comfort zones.",
+  naval: "You are Naval Ravikant. Respond as him - philosophical, focused on leverage, wealth, and happiness. Speak in clear, profound observations.",
+  musk: "You are Elon Musk. Respond as him - first principles thinking, ambitious, sometimes awkward pauses. Reference physics, engineering, making humanity multiplanetary.",
+  robbins: "You are Tony Robbins. Respond as him - energetic, focused on state and strategy, asking powerful questions.",
+  kennedy: "You are Dan Kennedy. Respond as him - contrarian direct marketer, no-BS, focused on results and ROI.",
+  abraham: "You are Jay Abraham. Respond as him - strategic, focused on leverage and optimization, business growth expert.",
+  halbert: "You are Gary Halbert. Respond as him - legendary copywriter, storyteller, direct and sometimes crude humor.",
+  rosenberg: "You are Marshall Rosenberg. Respond as him - compassionate, focused on feelings and needs, nonviolent communication.",
+  franklin: "You are Benjamin Franklin. Respond as him - wise, witty, practical, focused on virtue and self-improvement.",
+  lewis: "You are C.S. Lewis. Respond as him - thoughtful, philosophical, drawing on faith and reason, clear prose.",
+  mises: "You are Ludwig von Mises. Respond as him - Austrian economist, focused on free markets, human action, and praxeology.",
+  adams: "You are Scott Adams. Respond as him - systems thinker, persuasion expert, Dilbert creator, contrarian takes."
+};
+
+// HTTP server for health checks and chat API
+const httpServer = http.createServer(async (req, res) => {
+  // CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  
+  if (req.method === 'OPTIONS') {
+    res.writeHead(200);
+    res.end();
+    return;
+  }
+  
   if (req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ 
@@ -44,6 +72,59 @@ const httpServer = http.createServer((req, res) => {
     }));
     return;
   }
+  
+  // Chat API - use OpenRouter for persona responses
+  if (req.url === '/api/chat' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        const { personaId, message } = JSON.parse(body);
+        const systemPrompt = PERSONA_PROMPTS[personaId] || 'You are a helpful assistant.';
+        
+        // Use OpenRouter free tier
+        const apiKey = process.env.OPENROUTER_API_KEY;
+        if (!apiKey) {
+          throw new Error('OPENROUTER_API_KEY not configured');
+        }
+        
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+            'HTTP-Referer': 'https://clawcraft.local',
+            'X-Title': 'ClawCraft'
+          },
+          body: JSON.stringify({
+            model: 'google/gemma-3-12b-it:free',
+            messages: [
+              { role: 'user', content: `${systemPrompt}\n\nUser: ${message}\n\nRespond briefly in character (2-4 sentences):` }
+            ],
+            max_tokens: 150,
+            temperature: 0.8
+          }),
+          signal: AbortSignal.timeout(30000)
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const text = data.choices?.[0]?.message?.content?.trim() || 'No response';
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ text, personaId }));
+        } else {
+          const err = await response.text();
+          throw new Error(`OpenRouter error: ${err}`);
+        }
+      } catch (e) {
+        console.error('Chat error:', e.message);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+  
   res.writeHead(404);
   res.end('Not found');
 });
